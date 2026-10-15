@@ -42,9 +42,9 @@ const L = {
   helpLogin:["محتاج مساعدة؟","Need help?"],
   eFill:["اكتب الإيميل وكلمة السر.","Enter your email and password."], eName:["اكتب اسم الشركة.","Enter your business name."], eEmail:["الإيميل مش صحيح.","That email doesn't look right."],
   ePw8:["كلمة السر لازم تكون ٨ أحرف أو أكثر.","Password must be at least 8 characters."], ePwMatch:["كلمتين السر مش متطابقات.","Passwords don't match."],
-  eBadLogin:["الإيميل أو كلمة السر غلط.","Wrong email or password."], eConfirm:["لازم تأكد إيميلك أول. تفقّد صندوق الوارد (وكمان الـ Spam).","Please confirm your email first. Check your inbox (and spam)."],
+  eConfirmSent:["حسابك لسا مش مأكّد. بعتنالك رمز جديد على إيميلك، اكتبه هون.","Your account isn't confirmed yet. We sent a new code to your email, enter it here."], eBadLogin:["الإيميل أو كلمة السر غلط.","Wrong email or password."], eConfirm:["لازم تأكد إيميلك أول. تفقّد صندوق الوارد (وكمان الـ Spam).","Please confirm your email first. Check your inbox (and spam)."],
   eExists:["هالإيميل مسجّل من قبل. جرّب تسجيل الدخول أو \"نسيت كلمة السر\".","This email is already registered. Sign in or use \"Forgot password\"."],
-  eRate:["محاولات كثير. استنى شوي وجرّب.","Too many attempts. Wait a bit and try again."], eWeak:["كلمة السر ضعيفة. استعمل ٨ أحرف أو أكثر، فيها أرقام وحروف.","Weak password. Use 8+ characters with letters and numbers."],
+  eRate:["محاولات كثير. استنى شوي وجرّب.","Too many attempts. Wait a bit and try again."], eMailSend:["ما قدرنا نبعت الإيميل هلأ. جرّب بعد دقيقة، وإذا ضلّت راسلنا.","We couldn't send the email right now. Try again in a minute, or contact us if it keeps happening."], eWeak:["كلمة السر ضعيفة. استعمل ٨ أحرف أو أكثر، فيها أرقام وحروف.","Weak password. Use 8+ characters with letters and numbers."],
   eGeneric:["صار خطأ. تأكد من النت وجرّب كمان مرة.","Something went wrong. Check your connection and try again."],
   signedUp:["تم إنشاء الحساب. بعتنالك إيميل تأكيد، اضغط على الرابط اللي فيه وبعدها سجّل دخول.","Account created. We sent you a confirmation email — open the link, then sign in."],
   resetSent:["إذا الإيميل مسجّل عنا، رح يوصلك رابط تغيير كلمة السر خلال دقائق. تفقّد الـ Spam كمان.","If that email is registered, a reset link will arrive in a few minutes. Check spam too."],
@@ -110,7 +110,7 @@ const L = {
   rateHintDay:["يوميته {x}","Daily rate {x}"], rateHintWeek:["يعني يوميته {x} (÷ {d} أيام شغل)، واللي بيغيبه بينخصم","Daily rate {x} (÷ {d} work days); absent days are deducted"],
   rateHintMonth:["يعني يوميته تقريباً {x} (÷ أيام الشغل بالشهر)، واللي بيغيبه بينخصم","About {x} per day (÷ work days in the month); absent days are deducted"], typeAmount:["اكتب المبلغ","Enter the amount"],
   moveHere:["أو انقل حدا من مكان ثاني لهون","Or move someone here from elsewhere"], otRate:["أجرة ساعة الإضافي","Overtime hourly rate"], otHint:["إذا فاضية: اليومية ÷ {h} ساعات","If empty: daily ÷ {h} hours"],
-  worksAt:["شغال بـ","Works at"], removeStaff:["شيل من القائمة","Remove from list"], addStaffBtn:["ضيف","Add"], eStaffName:["اكتب الاسم.","Enter a name."], eRate:["اكتب الراتب.","Enter the pay amount."],
+  worksAt:["شغال بـ","Works at"], removeStaff:["شيل من القائمة","Remove from list"], addStaffBtn:["ضيف","Add"], eStaffName:["اكتب الاسم.","Enter a name."], ePayRate:["اكتب الراتب.","Enter the pay amount."],
   added:["انضاف {x}","{x} added"], moved:["انتقل {x} لهون","{x} moved here"],
   hoursOf:["ساعات {x} · {d}","{x}'s hours · {d}"], arrived:["إمتى وصل؟","Arrived at"], left:["إمتى روّح؟","Left at"], onTime:["عالوقت","on time"],
   exactIn:["ساعة الوصول بالضبط","Exact arrival time"], exactOut:["ساعة الروحة بالضبط","Exact leaving time"], earns:["بيستحق {x}","Earns {x}"],
@@ -1019,7 +1019,7 @@ function staffForm(s){
     del: s ? {label:t("removeStaff"), run:()=>save("staff",s.id,{...strip(s),active:false})} : null,
     submit: async v=>{
       if(!v.name){ toast(t("eStaffName")); return false; }
-      if(num(v.rate)<=0){ toast(t("eRate")); return false; }
+      if(num(v.rate)<=0){ toast(t("ePayRate")); return false; }
       const data = {...(s?strip(s):{createdAt:Date.now(),active:true,startDate:today()}), name:v.name.slice(0,80), role:(v.role||"").slice(0,60), phone:(v.phone||"").slice(0,30), rateType:v.rateType||defType, rate:num(v.rate), otRate:num(v.otRate), unitId:v.unitId || s?.unitId || S.uid};
       const ok = await save("staff", s?.id, data); if(ok && !s) toast(t("added",{x:v.name})); return ok;
     }});
@@ -1565,6 +1565,7 @@ function authError(e){ const m = String(e && e.message || "");
   if(/not confirmed/i.test(m)) return t("eConfirm");
   if(/already registered|already exists/i.test(m)) return t("eExists");
   if(/rate limit|too many|security purposes/i.test(m)) return t("eRate");
+  if(/error sending|smtp/i.test(m)) return t("eMailSend");
   if(/password/i.test(m) && /(weak|short|least|pwned|leaked)/i.test(m)) return t("eWeak");
   return t("eGeneric"); }
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) && e.length<=254;
@@ -1576,6 +1577,12 @@ const FORMS = {
   async login(v){
     if(!validEmail(v.email) || !v.password) return setMsg(t("eFill"));
     const { error } = await sb.auth.signInWithPassword({email:v.email, password:v.password});
+    if(error && /not confirmed/i.test(error.message||"")){
+      // signed up but never typed the code: take them straight to the code screen with a fresh code
+      S.sentTo = v.email; S.sentKind = "signup"; S.screen = "sent"; render();
+      const r = await sb.auth.resend({type:"signup", email:v.email, options:{emailRedirectTo:baseUrl()}});
+      r && r.error ? setMsg(authError(r.error)) : setMsg(t("eConfirmSent"), "info"); return;
+    }
     if(error) setMsg(authError(error));
   },
   async signup(v){
@@ -1591,7 +1598,7 @@ const FORMS = {
   async forgot(v){
     if(!validEmail(v.email)) return setMsg(t("eEmail"));
     const { error } = await sb.auth.resetPasswordForEmail(v.email, {redirectTo: baseUrl()});
-    if(error && /rate|security purposes/i.test(error.message||"")) return setMsg(t("eRate"));
+    if(error) return setMsg(authError(error));
     S.sentTo = v.email; S.sentKind = "reset"; S.screen = "sent"; S.authMsg = ""; render();
   },
   async otp(v){
@@ -1809,7 +1816,7 @@ const A = {
   gateWeb: () => { try{ sessionStorage.setItem("dweb","1"); }catch(e){} location.reload(); },
   resend: async (id, el) => { el.disabled = true;
     const r = S.sentKind==="signup" ? await sb.auth.resend({type:"signup", email:S.sentTo, options:{emailRedirectTo:baseUrl()}}) : await sb.auth.resetPasswordForEmail(S.sentTo, {redirectTo:baseUrl()});
-    toast(r && r.error ? (/rate|security purposes/i.test(r.error.message||"") ? t("eRate") : t("eGeneric")) : t("resent")); setTimeout(()=>{ if(el.isConnected) el.disabled = false; }, 30000); },
+    toast(r && r.error ? authError(r.error) : t("resent")); setTimeout(()=>{ if(el.isConnected) el.disabled = false; }, 30000); },
   obPick: id => { S.obType = id; const c = document.getElementById("obCur"); if(c) S.obCur = c.value; render(); },
   obDone: async (id, el) => { el.disabled = true; const c = document.getElementById("obCur"); S.obCur = c ? c.value : S.obCur;
     const settings = {...newSettings({type:S.obType, currency:S.obCur}), ...(COMPANY.settings||{}), type:S.obType, currency:S.obCur, payPeriod:(P[S.obType]||P.other).pay==="week"?"week":"month", onboarded:true};

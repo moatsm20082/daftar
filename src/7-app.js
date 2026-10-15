@@ -70,6 +70,7 @@ function authError(e){ const m = String(e && e.message || "");
   if(/not confirmed/i.test(m)) return t("eConfirm");
   if(/already registered|already exists/i.test(m)) return t("eExists");
   if(/rate limit|too many|security purposes/i.test(m)) return t("eRate");
+  if(/error sending|smtp/i.test(m)) return t("eMailSend");
   if(/password/i.test(m) && /(weak|short|least|pwned|leaked)/i.test(m)) return t("eWeak");
   return t("eGeneric"); }
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) && e.length<=254;
@@ -81,6 +82,12 @@ const FORMS = {
   async login(v){
     if(!validEmail(v.email) || !v.password) return setMsg(t("eFill"));
     const { error } = await sb.auth.signInWithPassword({email:v.email, password:v.password});
+    if(error && /not confirmed/i.test(error.message||"")){
+      // signed up but never typed the code: take them straight to the code screen with a fresh code
+      S.sentTo = v.email; S.sentKind = "signup"; S.screen = "sent"; render();
+      const r = await sb.auth.resend({type:"signup", email:v.email, options:{emailRedirectTo:baseUrl()}});
+      r && r.error ? setMsg(authError(r.error)) : setMsg(t("eConfirmSent"), "info"); return;
+    }
     if(error) setMsg(authError(error));
   },
   async signup(v){
@@ -96,7 +103,7 @@ const FORMS = {
   async forgot(v){
     if(!validEmail(v.email)) return setMsg(t("eEmail"));
     const { error } = await sb.auth.resetPasswordForEmail(v.email, {redirectTo: baseUrl()});
-    if(error && /rate|security purposes/i.test(error.message||"")) return setMsg(t("eRate"));
+    if(error) return setMsg(authError(error));
     S.sentTo = v.email; S.sentKind = "reset"; S.screen = "sent"; S.authMsg = ""; render();
   },
   async otp(v){
@@ -314,7 +321,7 @@ const A = {
   gateWeb: () => { try{ sessionStorage.setItem("dweb","1"); }catch(e){} location.reload(); },
   resend: async (id, el) => { el.disabled = true;
     const r = S.sentKind==="signup" ? await sb.auth.resend({type:"signup", email:S.sentTo, options:{emailRedirectTo:baseUrl()}}) : await sb.auth.resetPasswordForEmail(S.sentTo, {redirectTo:baseUrl()});
-    toast(r && r.error ? (/rate|security purposes/i.test(r.error.message||"") ? t("eRate") : t("eGeneric")) : t("resent")); setTimeout(()=>{ if(el.isConnected) el.disabled = false; }, 30000); },
+    toast(r && r.error ? authError(r.error) : t("resent")); setTimeout(()=>{ if(el.isConnected) el.disabled = false; }, 30000); },
   obPick: id => { S.obType = id; const c = document.getElementById("obCur"); if(c) S.obCur = c.value; render(); },
   obDone: async (id, el) => { el.disabled = true; const c = document.getElementById("obCur"); S.obCur = c ? c.value : S.obCur;
     const settings = {...newSettings({type:S.obType, currency:S.obCur}), ...(COMPANY.settings||{}), type:S.obType, currency:S.obCur, payPeriod:(P[S.obType]||P.other).pay==="week"?"week":"month", onboarded:true};

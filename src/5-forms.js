@@ -100,7 +100,7 @@ function staffForm(s){
     del: s ? {label:t("removeStaff"), run:()=>save("staff",s.id,{...strip(s),active:false})} : null,
     submit: async v=>{
       if(!v.name){ toast(t("eStaffName")); return false; }
-      if(num(v.rate)<=0){ toast(t("eRate")); return false; }
+      if(num(v.rate)<=0){ toast(t("ePayRate")); return false; }
       const data = {...(s?strip(s):{createdAt:Date.now(),active:true,startDate:today()}), name:v.name.slice(0,80), role:(v.role||"").slice(0,60), phone:(v.phone||"").slice(0,30), rateType:v.rateType||defType, rate:num(v.rate), otRate:num(v.otRate), unitId:v.unitId || s?.unitId || S.uid};
       const ok = await save("staff", s?.id, data); if(ok && !s) toast(t("added",{x:v.name})); return ok;
     }});

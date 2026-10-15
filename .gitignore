@@ -1,6 +1,7 @@
-1-github/
-2-supabase/
-3-video/
-source/
-/*.html
 node_modules/
+android/app/build/
+ios/App/Pods/
+*.keystore
+*.jks
+.env
+admin-console/
