@@ -1,0 +1,16 @@
+{
+  "appId": "co.daftarapp.app",
+  "appName": "Daftar",
+  "webDir": "docs/app",
+  "backgroundColor": "#18212b",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "always"
+  },
+  "server": {
+    "androidScheme": "https",
+    "hostname": "daftarapp.co"
+  }
+}

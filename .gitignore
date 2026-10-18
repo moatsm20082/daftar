@@ -1,0 +1,12 @@
+node_modules/
+android/app/build/
+ios/App/Pods/
+*.keystore
+*.jks
+.env
+admin-console/
+
+# private files that must never be published
+ابدأ-هون.html
+*PRIVATE*
+*.secret
