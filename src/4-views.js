@@ -40,7 +40,7 @@ function viewHome(){
   const hasBooks = S.invoices.length>0 || S.vouchers.length>0;
   if(!hasBooks && !(hasUnit && hasStaff && (hasAtt||hasMoney))){
     const steps = [[hasUnit, tv("ob1"), "newUnit"], [hasStaff, tv("ob2"), hasUnit?"openFirst":"newUnit"], [hasAtt||hasMoney, tv("ob3"), hasUnit?"openFirst":"newUnit"]];
-    return h + (hasUnit ? "" : `<div class="panel demo-cta"><div class="col"><b>${t("demoT")}</b><span class="sub">${t("demoS")}</span></div><button class="btn primary" data-act="demoLoad">${icon("bolt")}${t("demoBtn")}</button></div>`)
+    return h + (typeof moveHomeCard==="function" ? moveHomeCard() : "") + (hasUnit ? "" : `<div class="panel demo-cta"><div class="col"><b>${t("demoT")}</b><span class="sub">${t("demoS")}</span></div><button class="btn primary" data-act="demoLoad">${icon("bolt")}${t("demoBtn")}</button></div>`)
       + `<div class="panel start"><b class="start-t">${t("obStart")}</b><span class="sub">${t("obStartSub")}</span>
       <ol class="steps">${steps.map(([done,txt,act],i)=>`<li class="${done?"done":""}"><span class="step-n">${done?icon("check"):`<span class="num">${i+1}</span>`}</span><span class="step-t">${txt}</span>${done?"":`<button class="btn sm ${steps.findIndex(x=>!x[0])===i?"primary":""}" data-act="${act}">${t("doIt")}</button>`}</li>`).join("")}</ol></div>`
       + (hasUnit ? `<div class="qgrid home-q">${quickTiles()}</div><div class="folders">${activeUnits().slice(0,4).map(folder).join("")}</div>` : "");
@@ -54,6 +54,8 @@ function viewHome(){
     <div class="kpi hero ${m.profit<0?"neg":""}"><span class="label">${m.profit<0?t("loss"):t("profit")} · ${t("thisMonth")}</span><b>${money(Math.abs(m.profit))}</b></div></div>`;
   if(typeof radarHomeCard==="function") h += radarHomeCard();
   if(typeof pushHomeCard==="function") h += pushHomeCard();
+  if(typeof moveHomeCard==="function") h += moveHomeCard();
+  if(typeof apHomeCard==="function") h += apHomeCard();
   // trend
   const months = [...Array(6)].map((_,i)=>addMonths(ms,i-5));
   const vals = months.map(x=>companyTotals(x, monthEnd(x)).profit), mx = Math.max(1,...vals.map(Math.abs));

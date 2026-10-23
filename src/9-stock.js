@@ -19,7 +19,7 @@ const MAIN_STORE = "main";
 const storeList = () => [{id:MAIN_STORE, name:t("storeMain")}, ...S.stores.filter(s=>!s.archived && s.id!==MAIN_STORE).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0))];
 const storeName = id => (storeList().find(s=>s.id===id) || {name:t("storeMain")}).name;
 const itemByName = n => { const k = String(n||"").trim().toLowerCase(); return k ? S.items.find(i=>String(i.name).trim().toLowerCase()===k) : null; };
-const itemOf = l => (l.itemId && S.items.find(i=>i.id===l.itemId)) || itemByName(l.name);
+const itemOf = l => l.nostock ? null : (l.itemId && S.items.find(i=>i.id===l.itemId)) || itemByName(l.name);   // nostock: moved-in history lines, already counted in opening quantities
 const stocked = i => i && !i.service;
 const invStockSign = tp => tp==="sale" ? -1 : tp==="saleReturn" ? 1 : tp==="purchase" ? 1 : tp==="purchaseReturn" ? -1 : 0;
 /* every stock movement, from invoices, manual moves and opening quantities */

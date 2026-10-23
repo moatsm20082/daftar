@@ -41,7 +41,7 @@ const ST = () => { const s = (COMPANY && COMPANY.settings) || {};
     shiftIn: s.shiftIn || "08:00", shiftOut: s.shiftOut || "17:00", payPeriod: s.payPeriod==="month"||s.payPeriod==="week" ? s.payPeriod : null,
     otMult: [1,1.25,1.5].includes(Number(s.otMult)) ? Number(s.otMult) : 1,
     taxNo: String(s.taxNo||""), address: String(s.address||""), taxRate: s.taxRate===undefined||s.taxRate===null||s.taxRate==="" ? 16 : Math.max(0,Math.min(50,Number(s.taxRate)||0)),
-    incTax: !!s.incTax, invFoot: String(s.invFoot||"") }; };
+    incTax: !!s.incTax, invFoot: String(s.invFoot||""), paper: ["80","58"].includes(String(s.paper)) ? String(s.paper) : "a4" }; };
 const PRE = () => P[ST().type];
 const LI = () => LANG==="en" ? 1 : 0;
 const term = (k, plural) => { const p = PRE()[k][LI()]; return plural ? p[1] : p[0]; };
@@ -178,7 +178,10 @@ async function save(col,id,data,quiet){
   if(!sb || !CID){ toast(t("signInFirst")); return false; }
   id = id || newId();
   const { error } = await sb.from("records").upsert({company_id:CID, col, id, data}, {onConflict:"company_id,col,id"});
-  if(error){ toast(errMsg(error)); return false; }
+  if(error){
+    // no internet: shop work (sales, receipts, customers) is kept on the device and sent later
+    if(typeof outboxTake==="function" && outboxTake(col, id, data, error)){ applyLocal(col,id,data); if(!quiet) render(); return true; }
+    toast(errMsg(error)); return false; }
   applyLocal(col,id,data); if(!quiet) render(); return true;
 }
 async function remove(col,id){

@@ -59,6 +59,7 @@ function radarEvents(H, J){
     if(x.type!=="sale" && x.type!=="purchase") return;
     const left = r2(invCalc(x).total - invPaid(x)); if(left<=0.005) return;
     const due = x.dueDate || x.date || t0;
+    if(x.type==="sale" && x.inst && typeof instRows==="function"){ instRows(x).filter(r=>r.left>0.005).forEach(r=>{ const late = r.date<t0; push(late ? addDays(t0,7) : r.date, r.left, "inv", t(late?"evInstLate":"evInst",{k:r.k,n:x.no||"",x:pn(x.partyId)}), false, "viewInv", x.id); }); return; }
     if(x.type==="sale"){ const late = due<t0; push(late ? addDays(t0,7) : due, left, "inv", t(late?"evInvLate":"evInv",{n:x.no||"",x:pn(x.partyId)}), false, "viewInv", x.id); }
     else push(due, -left, "bill", t("evBill",{n:x.supNo||x.no||"",x:pn(x.partyId)}), true, "viewInv", x.id);
   });
@@ -86,7 +87,7 @@ function radarEvents(H, J){
     Object.keys(taxM).forEach(m=>{ const due = monthEnd(addMonths(m+"-01",1)); if(due>=t0) push(due, -taxM[m], "tax", t("evTax",{m:mName(m+"-01")}), true); });
   }
   // sales tax: 2-month periods (Jan–Feb, Mar–Apr…), paid within 30 days after the period ends
-  const taxed = liveInv().filter(x=>x.type!=="quote");
+  const taxed = liveInv();
   if(taxed.some(x=>invCalc(x).tax>0)){
     const y = Number(t0.slice(0,4)), m0 = parseD(t0).getMonth();
     const startCur = iso(new Date(y, m0 - (m0%2), 1));

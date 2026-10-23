@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>حاسبة الإجازة السنوية حسب قانون العمل الأردني | دفتر</title>
+<meta name="description" content="احسب رصيد الإجازة السنوية: 14 يوم بالسنة، و21 يوم بعد 5 سنوات عند نفس صاحب العمل. واعرف قدّيش إلك عن جزء من السنة وقدّيش ضايل.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://daftarapp.co/tools/annual-leave/">
+<meta property="og:type" content="website"><meta property="og:locale" content="ar_JO"><meta property="og:site_name" content="دفتر">
+<meta property="og:title" content="حاسبة الإجازة السنوية حسب قانون العمل الأردني"><meta property="og:description" content="احسب رصيد الإجازة السنوية: 14 يوم بالسنة، و21 يوم بعد 5 سنوات عند نفس صاحب العمل. واعرف قدّيش إلك عن جزء من السنة وقدّيش ضايل.">
+<meta property="og:url" content="https://daftarapp.co/tools/annual-leave/"><meta property="og:image" content="https://daftarapp.co/get/media/poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#050A1C">
+<link rel="icon" href="/app/icons/favicon-32.png" type="image/png">
+<link rel="apple-touch-icon" href="/app/icons/icon-180.png">
+<link rel="stylesheet" href="/get/fonts.css">
+<link rel="stylesheet" href="/tools/tools.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "حاسبة الإجازة السنوية حسب قانون العمل الأردني", "url": "https://daftarapp.co/tools/annual-leave/", "inLanguage": "ar", "applicationCategory": "BusinessApplication", "operatingSystem": "Web, Android, iOS", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "JOD"}, "publisher": {"@type": "Organization", "name": "دفتر", "url": "https://daftarapp.co/"}}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "دفتر", "item": "https://daftarapp.co/"}, {"@type": "ListItem", "position": 2, "name": "أدوات مجانية", "item": "https://daftarapp.co/tools/"}, {"@type": "ListItem", "position": 3, "name": "الإجازة السنوية", "item": "https://daftarapp.co/tools/annual-leave/"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "قدّيش الإجازة السنوية بالأردن؟", "acceptedAnswer": {"@type": "Answer", "text": "14 يوم بأجر كامل بالسنة، وبتصير 21 يوم بعد 5 سنوات عند نفس صاحب العمل."}}, {"@type": "Question", "name": "إذا اشتغلت 6 أشهر، إلي إجازة؟", "acceptedAnswer": {"@type": "Answer", "text": "آه، بالنسبة: تقريباً نص الإجازة السنوية، يعني 7 أيام إذا إجازتك 14."}}, {"@type": "Question", "name": "في برنامج بيحسب إجازات الموظفين؟", "acceptedAnswer": {"@type": "Answer", "text": "تطبيق دفتر المجاني بيسجّل الإجازات السنوية والمرضية وبدون راتب، وبيعرض الرصيد الضايل لكل موظف."}}]}</script>
+</head>
+<body>
+<header class="top"><a class="logo" href="/">دفتر<i>.</i></a><nav><a href="/accounting/">برنامج المحاسبة</a><a href="/tools/">أدوات مجانية</a><a class="cta" href="/get/">نزّل التطبيق</a></nav></header>
+<main>
+<div class="crumbs"><a href="/">دفتر</a> › <a href="/tools/">أدوات مجانية</a> › الإجازة السنوية</div>
+<h1>حاسبة <em>الإجازة السنوية</em></h1>
+<p class="lead">حط تاريخ بداية الشغل والأيام اللي أخذتها، وبتعرف رصيدك.</p>
+<section class="calc" id="alv">
+  <div class="grid"><label>تاريخ بداية الشغل<input id="lStart" type="date" value="2022-03-01"></label><label>تاريخ اليوم<input id="lToday" type="date" value="2026-10-23"></label></div>
+  <div class="grid"><label>أيام إجازة أخذتها هالسنة<input id="lUsed" inputmode="decimal" value="5"></label><label>أيام الشغل بالأسبوع<input id="lWeek" inputmode="decimal" value="6"></label></div>
+  <div class="out"><div class="row"><span>سنوات الخدمة</span><b><span class="num" id="lYears">0</span></b></div>
+   <div class="row"><span>إجازتك بالسنة</span><b><span class="num" id="lPer">0</span> يوم</b></div>
+   <div class="row"><span>المستحق لهلأ من هالسنة</span><b><span class="num" id="lEarned">0</span> يوم</b></div>
+   <div class="row"><span>ضايلك</span><b class="big"><span class="num" id="lLeft">0</span> يوم</b></div></div>
+  <p class="note">14 يوم أجر كامل عن كل سنة، و21 يوم إذا صارلك 5 سنوات عند نفس صاحب العمل. العطل الرسمية والأسبوعية ما بتنحسب من الإجازة. للاسترشاد.</p></section>
+<h2>كيف بتنحسب الإجازة السنوية بالأردن؟</h2>
+<ul><li><b>14 يوم</b> بالسنة بأجر كامل.</li><li><b>21 يوم</b> إذا صارلك 5 سنوات متواصلة عند نفس صاحب العمل.</li>
+<li><b>جزء من السنة:</b> بتستحق بنسبة الأشهر اللي اشتغلتها.</li><li><b>العطل الرسمية والأسبوعية</b> ما بتنخصم من رصيد الإجازة.</li></ul>
+<h2>أسئلة بتتكرر</h2><details><summary>قدّيش الإجازة السنوية بالأردن؟</summary><p>14 يوم بأجر كامل بالسنة، وبتصير 21 يوم بعد 5 سنوات عند نفس صاحب العمل.</p></details><details><summary>إذا اشتغلت 6 أشهر، إلي إجازة؟</summary><p>آه، بالنسبة: تقريباً نص الإجازة السنوية، يعني 7 أيام إذا إجازتك 14.</p></details><details><summary>في برنامج بيحسب إجازات الموظفين؟</summary><p>تطبيق دفتر المجاني بيسجّل الإجازات السنوية والمرضية وبدون راتب، وبيعرض الرصيد الضايل لكل موظف.</p></details>
+<div class="cta-box"><b>بدك هالحسابات تصير لحالها؟</b><p>تطبيق <b>دفتر</b> المجاني بيسجّل دوام العمال بكبسة، وبيحسب الرواتب والإضافي والسلف، وبيعرّفك قدّيش كلّف كل مشروع. فيه كمان حساب التكسي والتوصيل، والفواتير بالصور، وفريقك كله بيسجّل معك على نفس الحساب.</p>
+<div class="btns"><a class="btn solid" href="/get/">نزّل دفتر مجاناً</a><a class="btn" href="/app/">افتحه الآن</a></div></div>
+<h2>أدوات ثانية</h2><div class="cards"><a class="card" href="/daily-accounts/"><b>دفتر حسابات يومية مجاني</b><span>سجّل الداخل والطالع كل يوم، واعرف رصيدك فوراً. يشتغل على الموبايل وبينطبع.</span></a><a class="card" href="/tools/overtime/"><b>حاسبة العمل الإضافي</b><span>احسب أجر ساعة الإضافي حسب قانون العمل الأردني (125% و150%).</span></a><a class="card" href="/tools/salary/"><b>حاسبة الراتب والأجر اليومي</b><span>من الراتب الشهري أو الأسبوعي لليومية، مع الغياب والإضافي والسلف.</span></a><a class="card" href="/tools/driver/"><b>حاسبة ربح سائق التطبيقات</b><span>كريم، أوبر، جيني، طلبات: كم بيضل معك بعد العمولة والبنزين، بالساعة وبالكيلو.</span></a><a class="card" href="/tools/vat/"><b>حاسبة ضريبة المبيعات 16%</b><span>ضيف الضريبة على السعر، أو طلّعها من سعر شامل، بثانية.</span></a><a class="card" href="/tools/social-security/"><b>حاسبة الضمان الاجتماعي</b><span>حصة الموظف 7.5% وحصة الشركة 14.25%، والصافي بعد الاقتطاع.</span></a><a class="card" href="/tools/end-of-service/"><b>حاسبة مكافأة نهاية الخدمة</b><span>أجر شهر عن كل سنة خدمة لغير المشمولين بالضمان، مع كسور السنة.</span></a><a class="card" href="/tools/income-tax/"><b>حاسبة ضريبة الدخل على الراتب</b><span>الإعفاءات والشرائح بالأردن: كم بتنقطع ضريبة من راتبك بالشهر والسنة.</span></a><a class="card" href="/tools/profit-margin/"><b>حاسبة نسبة الربح وسعر البيع</b><span>من سعر الشراء لسعر البيع، أو العكس: الربح ونسبته والهامش.</span></a><a class="card" href="/accounting/"><b>برنامج محاسبة مجاني</b><span>فواتير ضريبية، ذمم، شيكات، مخزون، قيود وميزانية، رواتب وضمان، ونقطة بيع. من الجوال.</span></a></div>
+</main>
+<footer><span>© 2026 دفتر · صُنع في الأردن</span><span><a href="/tools/">أدوات مجانية</a> · <a href="/privacy.html">الخصوصية</a> · <a href="/get/">نزّل التطبيق</a></span></footer>
+<script src="/tools/tools.js"></script>
+<script src="/get/ask.js" defer></script>
+</body>
+</html>

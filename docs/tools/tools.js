@@ -96,4 +96,36 @@ if ($("#ssc")) on("#ssc input, #ssc select", () => {
   const w = Math.min(n("sWageM"), n("sCap") || Infinity), e = n("sEmp") / 100, r = n("sEr") / 100, cnt = Math.max(1, n("sCount") || 1);
   put("sE", f(w * e)); put("sR", f(w * r)); put("sT", f(w * (e + r))); put("sNet", f(n("sWageM") - w * e)); put("sAll", f(w * (e + r) * cnt)); $$(".cur").forEach(c => c.textContent = cur());
 });
+/* ---- end of service: a month's last wage per year of actual service (not covered by social security) ---- */
+if ($("#eos")) on("#eos input, #eos select", () => {
+  const a = new Date($("#eFrom").value), b = new Date($("#eTo").value);
+  let yrs = 0; if (isFinite(a) && isFinite(b) && b > a) { let m = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth(), d = b.getDate() - a.getDate(); if (d < 0) { m--; d += 30; } yrs = m / 12 + d / 360; }
+  const ss = radio("eSS") === "yes";
+  put("eYears", f(yrs, 2)); put("eAmt", f(ss ? 0 : yrs * n("eWage")));
+  $("#eNote").textContent = ss ? "المشمول بالضمان بالعادة ما بياخد مكافأة من صاحب العمل، حقوقه من الضمان، إلا إذا العقد بيحكي غير هيك." : "أجر شهر عن كل سنة خدمة فعلية، والكسور بالنسبة. للاسترشاد فقط، راجع محامي أو وزارة العمل بحالتك.";
+  $$(".cur").forEach(c => c.textContent = cur());
+});
+/* ---- Jordan income tax on salary (individuals) ---- */
+if ($("#itx")) on("#itx input, #itx select", () => {
+  const year = n("tWage") * (n("tMonths") || 12), ex = 9000 + (radio("tFam") === "1" ? 9000 : 0);
+  let x = Math.max(0, year - ex), tax = 0; const taxable = x;
+  for (const [w, r] of [[5000, .05], [5000, .10], [5000, .15], [5000, .20], [980000, .25], [Infinity, .30]]) { const p = Math.min(x, w); tax += p * r; x -= p; if (x <= 0) break; }
+  put("tYear", f(year)); put("tTaxable", f(taxable)); put("tTaxY", f(tax)); put("tTaxM", f(tax / 12)); $$(".cur").forEach(c => c.textContent = cur());
+});
+/* ---- annual leave: 14 days, 21 after 5 years with the same employer ---- */
+if ($("#alv")) on("#alv input", () => {
+  const s = new Date($("#lStart").value), t = new Date($("#lToday").value);
+  const yrs = isFinite(s) && isFinite(t) && t > s ? (t - s) / (365.25 * 864e5) : 0, per = yrs >= 5 ? 21 : 14;
+  const yStart = new Date(t.getFullYear(), 0, 1), from = s > yStart ? s : yStart, frac = isFinite(t) ? Math.max(0, Math.min(1, (t - from) / (365.25 * 864e5))) : 0;
+  const earned = per * frac;
+  put("lYears", f(yrs, 1)); put("lPer", per); put("lEarned", f(earned, 1)); put("lLeft", f(Math.max(0, earned - n("lUsed")), 1));
+});
+/* ---- profit: price from cost + markup, or markup/margin from both prices ---- */
+if ($("#pm")) on("#pm input, #pm select", () => {
+  const byPct = radio("pMode") !== "pct", cost = n("pCost");
+  $("#pPctRow").hidden = !byPct; $("#pPriceRow").hidden = byPct;
+  const price = byPct ? cost * (1 + n("pPct") / 100) : n("pPrice"), profit = price - cost;
+  put("pOutPrice", f(price)); put("pProfit", f(profit)); put("pMarkup", cost ? f(profit / cost * 100, 1) : "0"); put("pMargin", price ? f(profit / price * 100, 1) : "0");
+  $$(".cur").forEach(c => c.textContent = cur());
+});
 })();

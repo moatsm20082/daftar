@@ -240,13 +240,14 @@ function settingsSheet(){
       {name:"taxRate",label:t("setTax"),type:"chips",options:[["16","16%"],["10","10%"],["8","8%"],["4","4%"],["0",t("taxExempt")]],value:String(s.taxRate===undefined||s.taxRate===null||s.taxRate===""?16:s.taxRate)},
       {name:"incTax",label:t("setIncTax"),type:"chips",options:[["0",LANG==="en"?"No":"لا"],["1",LANG==="en"?"Yes":"آه"]],value:s.incTax?"1":"0"},
       {name:"invFoot",label:t("setInvFoot"),value:s.invFoot||"",max:120,ph:t("thanksInv")},
+      {name:"paper",label:t("setPaper"),type:"chips",options:[["a4",t("paperA4")],["80",t("paper80")],["58",t("paper58")]],value:s.paper,hint:t("paperHint")},
       {name:"ssEmp",label:t("setSSEmp"),type:"money",value:String((COMPANY.settings||{}).ssEmp ?? 7.5),hint:t("hrSSHint")},{name:"ssEr",label:t("setSSEr"),type:"money",value:String((COMPANY.settings||{}).ssEr ?? 14.25)},
       {name:"ssCap",label:t("setSSCap"),type:"money",value:String((COMPANY.settings||{}).ssCap ?? 3733)}],
     submit: async v=>{
       if(!v.name || v.name.length<2){ toast(t("eName")); return false; }
       const settings = {...(COMPANY.settings||{}), type:P[v.type]?v.type:"other", currency:CUR[v.currency]?v.currency:"JOD", lang:v.lang==="en"?"en":"ar",
         weekend:(v.weekend||[]).map(Number).filter(n=>n>=0&&n<=6), shiftIn:mins(v.shiftIn)!=null?v.shiftIn:"08:00", shiftOut:mins(v.shiftOut)!=null?v.shiftOut:"17:00", payPeriod:v.payPeriod==="month"?"month":"week", otMult:[1,1.25,1.5].includes(Number(v.otMult))?Number(v.otMult):1,
-        taxNo:(v.taxNo||"").slice(0,30), address:(v.address||"").slice(0,120), taxRate:Math.max(0,Math.min(50,num(v.taxRate))), incTax:v.incTax==="1", invFoot:(v.invFoot||"").slice(0,120),
+        taxNo:(v.taxNo||"").slice(0,30), address:(v.address||"").slice(0,120), taxRate:Math.max(0,Math.min(50,num(v.taxRate))), incTax:v.incTax==="1", invFoot:(v.invFoot||"").slice(0,120), paper:["80","58"].includes(v.paper)?v.paper:"a4",
         ssEmp:Math.max(0,Math.min(30,num(v.ssEmp))), ssEr:Math.max(0,Math.min(40,num(v.ssEr))), ssCap:num(v.ssCap)||3733};
       return applySettings({name:v.name.slice(0,80), phone:(v.phone||"").slice(0,30)||null, settings});
     }});

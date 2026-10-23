@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>حاسبة نسبة الربح وسعر البيع | دفتر</title>
+<meta name="description" content="احسب سعر البيع من سعر الشراء ونسبة الربح، أو احسب نسبة ربحك وهامشك من السعرين. للمحلات والتجار، مجاناً.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://daftarapp.co/tools/profit-margin/">
+<meta property="og:type" content="website"><meta property="og:locale" content="ar_JO"><meta property="og:site_name" content="دفتر">
+<meta property="og:title" content="حاسبة نسبة الربح وسعر البيع"><meta property="og:description" content="احسب سعر البيع من سعر الشراء ونسبة الربح، أو احسب نسبة ربحك وهامشك من السعرين. للمحلات والتجار، مجاناً.">
+<meta property="og:url" content="https://daftarapp.co/tools/profit-margin/"><meta property="og:image" content="https://daftarapp.co/get/media/poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#050A1C">
+<link rel="icon" href="/app/icons/favicon-32.png" type="image/png">
+<link rel="apple-touch-icon" href="/app/icons/icon-180.png">
+<link rel="stylesheet" href="/get/fonts.css">
+<link rel="stylesheet" href="/tools/tools.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "حاسبة نسبة الربح وسعر البيع", "url": "https://daftarapp.co/tools/profit-margin/", "inLanguage": "ar", "applicationCategory": "BusinessApplication", "operatingSystem": "Web, Android, iOS", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "JOD"}, "publisher": {"@type": "Organization", "name": "دفتر", "url": "https://daftarapp.co/"}}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "دفتر", "item": "https://daftarapp.co/"}, {"@type": "ListItem", "position": 2, "name": "أدوات مجانية", "item": "https://daftarapp.co/tools/"}, {"@type": "ListItem", "position": 3, "name": "نسبة الربح", "item": "https://daftarapp.co/tools/profit-margin/"}]}</script><script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "كيف أحسب سعر البيع من نسبة الربح؟", "acceptedAnswer": {"@type": "Answer", "text": "سعر البيع = التكلفة × (1 + نسبة الربح). مثلاً تكلفة 10 وربح 30%: 10 × 1.3 = 13."}}, {"@type": "Question", "name": "شو الفرق بين نسبة الربح والهامش؟", "acceptedAnswer": {"@type": "Answer", "text": "نسبة الربح بتنحسب على التكلفة، والهامش بينحسب على سعر البيع، فالهامش دايماً أقل."}}, {"@type": "Question", "name": "في برنامج بيحسبلي ربح كل صنف؟", "acceptedAnswer": {"@type": "Answer", "text": "تطبيق دفتر المجاني بيحفظ سعر الشراء والبيع لكل صنف، وبيحسب تكلفة البضاعة المباعة ومجمل الربح من الفواتير."}}]}</script>
+</head>
+<body>
+<header class="top"><a class="logo" href="/">دفتر<i>.</i></a><nav><a href="/accounting/">برنامج المحاسبة</a><a href="/tools/">أدوات مجانية</a><a class="cta" href="/get/">نزّل التطبيق</a></nav></header>
+<main>
+<div class="crumbs"><a href="/">دفتر</a> › <a href="/tools/">أدوات مجانية</a> › نسبة الربح</div>
+<h1>حاسبة <em>نسبة الربح</em> وسعر البيع</h1>
+<p class="lead">عندك سعر الشراء وبدك تعرف بكم تبيع؟ أو عندك السعرين وبدك نسبة الربح؟</p>
+<section class="calc" id="pm">
+  <div class="seg"><label><input type="radio" name="pMode" value="price" checked> بدي سعر البيع</label><label><input type="radio" name="pMode" value="pct"> بدي نسبة الربح</label></div>
+  <div class="grid"><label>سعر الشراء (التكلفة)<input id="pCost" inputmode="decimal" value="10"></label>
+   <label id="pPctRow">نسبة الربح على التكلفة %<input id="pPct" inputmode="decimal" value="30"></label>
+   <label id="pPriceRow" hidden>سعر البيع<input id="pPrice" inputmode="decimal" value="13"></label><label>العملة<select id="cur"><option>دينار</option><option>ريال</option><option>درهم</option><option>جنيه</option><option>دولار</option></select></label></div>
+  <div class="out"><div class="row"><span>سعر البيع</span><b class="big"><span class="num" id="pOutPrice">0</span> <span class="cur"></span></b></div>
+   <div class="row"><span>الربح بالقطعة</span><b><span class="num" id="pProfit">0</span> <span class="cur"></span></b></div>
+   <div class="row"><span>نسبة الربح على التكلفة (Markup)</span><b><span class="num" id="pMarkup">0</span>%</b></div>
+   <div class="row"><span>هامش الربح من سعر البيع (Margin)</span><b><span class="num" id="pMargin">0</span>%</b></div></div>
+  <p class="note">إذا بتبيع بضريبة مبيعات، ضيفها على سعر البيع بـ <a href="/tools/vat/">حاسبة الضريبة 16%</a>.</p></section>
+<h2>الفرق بين نسبة الربح وهامش الربح</h2>
+<ul><li><b>نسبة الربح (Markup):</b> الربح ÷ التكلفة. اشتريت بـ 10 وبعت بـ 13، نسبة الربح 30%.</li>
+<li><b>هامش الربح (Margin):</b> الربح ÷ سعر البيع. بنفس المثال الهامش 23%.</li></ul>
+<h2>أسئلة بتتكرر</h2><details><summary>كيف أحسب سعر البيع من نسبة الربح؟</summary><p>سعر البيع = التكلفة × (1 + نسبة الربح). مثلاً تكلفة 10 وربح 30%: 10 × 1.3 = 13.</p></details><details><summary>شو الفرق بين نسبة الربح والهامش؟</summary><p>نسبة الربح بتنحسب على التكلفة، والهامش بينحسب على سعر البيع، فالهامش دايماً أقل.</p></details><details><summary>في برنامج بيحسبلي ربح كل صنف؟</summary><p>تطبيق دفتر المجاني بيحفظ سعر الشراء والبيع لكل صنف، وبيحسب تكلفة البضاعة المباعة ومجمل الربح من الفواتير.</p></details>
+<div class="cta-box"><b>بدك هالحسابات تصير لحالها؟</b><p>تطبيق <b>دفتر</b> المجاني بيسجّل دوام العمال بكبسة، وبيحسب الرواتب والإضافي والسلف، وبيعرّفك قدّيش كلّف كل مشروع. فيه كمان حساب التكسي والتوصيل، والفواتير بالصور، وفريقك كله بيسجّل معك على نفس الحساب.</p>
+<div class="btns"><a class="btn solid" href="/get/">نزّل دفتر مجاناً</a><a class="btn" href="/app/">افتحه الآن</a></div></div>
+<h2>أدوات ثانية</h2><div class="cards"><a class="card" href="/daily-accounts/"><b>دفتر حسابات يومية مجاني</b><span>سجّل الداخل والطالع كل يوم، واعرف رصيدك فوراً. يشتغل على الموبايل وبينطبع.</span></a><a class="card" href="/tools/overtime/"><b>حاسبة العمل الإضافي</b><span>احسب أجر ساعة الإضافي حسب قانون العمل الأردني (125% و150%).</span></a><a class="card" href="/tools/salary/"><b>حاسبة الراتب والأجر اليومي</b><span>من الراتب الشهري أو الأسبوعي لليومية، مع الغياب والإضافي والسلف.</span></a><a class="card" href="/tools/driver/"><b>حاسبة ربح سائق التطبيقات</b><span>كريم، أوبر، جيني، طلبات: كم بيضل معك بعد العمولة والبنزين، بالساعة وبالكيلو.</span></a><a class="card" href="/tools/vat/"><b>حاسبة ضريبة المبيعات 16%</b><span>ضيف الضريبة على السعر، أو طلّعها من سعر شامل، بثانية.</span></a><a class="card" href="/tools/social-security/"><b>حاسبة الضمان الاجتماعي</b><span>حصة الموظف 7.5% وحصة الشركة 14.25%، والصافي بعد الاقتطاع.</span></a><a class="card" href="/tools/end-of-service/"><b>حاسبة مكافأة نهاية الخدمة</b><span>أجر شهر عن كل سنة خدمة لغير المشمولين بالضمان، مع كسور السنة.</span></a><a class="card" href="/tools/income-tax/"><b>حاسبة ضريبة الدخل على الراتب</b><span>الإعفاءات والشرائح بالأردن: كم بتنقطع ضريبة من راتبك بالشهر والسنة.</span></a><a class="card" href="/tools/annual-leave/"><b>حاسبة الإجازة السنوية</b><span>14 يوم، و21 بعد 5 سنوات: كم إلك إجازة وقدّيش ضايل.</span></a><a class="card" href="/accounting/"><b>برنامج محاسبة مجاني</b><span>فواتير ضريبية، ذمم، شيكات، مخزون، قيود وميزانية، رواتب وضمان، ونقطة بيع. من الجوال.</span></a></div>
+</main>
+<footer><span>© 2026 دفتر · صُنع في الأردن</span><span><a href="/tools/">أدوات مجانية</a> · <a href="/privacy.html">الخصوصية</a> · <a href="/get/">نزّل التطبيق</a></span></footer>
+<script src="/tools/tools.js"></script>
+<script src="/get/ask.js" defer></script>
+</body>
+</html>

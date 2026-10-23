@@ -8,7 +8,7 @@ Object.assign(L, {
   bkMoneyT:["الحسابات","Accounts"],
   // invoice types
   itSale:["فاتورة بيع","Sales invoice"], itPurchase:["فاتورة شراء","Purchase bill"], itSaleRet:["مرتجع مبيعات","Sales return"], itPurRet:["مرتجع مشتريات","Purchase return"], itQuote:["عرض سعر","Quotation"],
-  itSales:["المبيعات","Sales"], itPurchases:["المشتريات","Purchases"], itQuotes:["عروض الأسعار","Quotes"], itReturns:["المرتجعات","Returns"],
+  itSales:["المبيعات","Sales"], itPurchases:["المشتريات","Purchases"], itQuotes:["عروض وطلبات","Quotes & orders"], itPO:["طلب شراء","Purchase order"], stPO:["طلب شراء","Order"], stDone:["تحوّل لفاتورة","Converted"], newQuote:["عرض سعر جديد","New quote"], newPO:["طلب شراء جديد","New purchase order"], poToInv:["وصلت البضاعة: حوّله لفاتورة شراء","Goods arrived: make a purchase bill"], itReturns:["المرتجعات","Returns"],
   newSale:["فاتورة بيع","Sales invoice"], newPurchase:["فاتورة شراء","Purchase bill"],
   // parties
   pCustomer:["زبون","Customer"], pSupplier:["مورّد","Supplier"], pBoth:["زبون ومورّد","Both"], pCustomers:["الزباين","Customers"], pSuppliers:["الموردين","Suppliers"],
@@ -68,8 +68,10 @@ BOOK_COLS.forEach(c=>{ if(!COLS.includes(c)) COLS.push(c); S[c] = S[c] || []; })
 
 /* ----- numbers & helpers ----- */
 const r2 = n => Math.round((n||0)*100)/100;
-const INV_PFX = {sale:"S", purchase:"P", saleReturn:"SR", purchaseReturn:"PR", quote:"Q"};
-const INV_T = {sale:"itSale", purchase:"itPurchase", saleReturn:"itSaleRet", purchaseReturn:"itPurRet", quote:"itQuote"};
+const INV_PFX = {sale:"S", purchase:"P", saleReturn:"SR", purchaseReturn:"PR", quote:"Q", po:"PO"};
+const INV_T = {sale:"itSale", purchase:"itPurchase", saleReturn:"itSaleRet", purchaseReturn:"itPurRet", quote:"itQuote", po:"itPO"};
+/* drafts: a quote to a customer or a purchase order to a supplier. They move nothing until converted. */
+const isDraft = tp => tp==="quote" || tp==="po";
 const isSaleSide = tp => tp==="sale" || tp==="saleReturn" || tp==="quote";
 const taxRate = () => ST().taxRate;
 const partyById = id => S.parties.find(p=>p.id===id);
@@ -88,17 +90,18 @@ function invCalc(inv){
   return {rows, gross:r2(sumNet), discount:r2(d), net, tax, total:r2(net+tax)};
 }
 const invSign = tp => tp==="sale" ? 1 : tp==="saleReturn" ? -1 : tp==="purchase" ? -1 : tp==="purchaseReturn" ? 1 : 0;   // + means the party owes us more
-const liveInv = () => S.invoices.filter(x=>x.type!=="quote" && !x.void);
+const liveInv = () => S.invoices.filter(x=>!isDraft(x.type) && !x.void && !x.hist);   // hist: old invoices moved in for reference only
 const liveVouch = () => S.vouchers.filter(v=>!v.void);
 function invPaid(inv){ return r2(sum(liveVouch().filter(v=>v.invoiceId===inv.id), v=>num(v.amount))); }
 function invState(inv){
-  if(inv.type==="quote") return "quote";
+  if(isDraft(inv.type)) return S.invoices.some(i=>i.srcId===inv.id && !i.void && !isDraft(i.type)) ? "done" : inv.type;
+  if(inv.hist) return "arch";
   const tot = invCalc(inv).total, p = invPaid(inv);
   if(tot<=0.005 || p>=tot-0.005) return "paid";
   if(inv.dueDate && inv.dueDate<today()) return "overdue";
   return p>0.005 ? "partial" : "unpaid";
 }
-const stPill = st => `<span class="pill ${st==="paid"?"good":st==="overdue"?"bad":st==="quote"?"":"warn"}">${t({paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote"}[st])}</span>`;
+const stPill = st => `<span class="pill ${st==="paid"?"good":st==="overdue"?"bad":st==="quote"||st==="po"||st==="arch"?"":st==="done"?"good":"warn"}">${t({done:"stDone",paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote",po:"stPO",arch:"stArch"}[st])}</span>`;
 /* party balance: + they owe us, − we owe them */
 function partyLedger(pid, a, b){
   const p = partyById(pid); const rows = [];
@@ -135,15 +138,16 @@ function viewBooks(){
 /* ----- invoices list ----- */
 function viewInvoices(){
   const f = S.ifilter || "sale", q = (S.iq||"").trim().toLowerCase();
-  const fl = x => f==="sale" ? x.type==="sale" : f==="purchase" ? x.type==="purchase" : f==="quote" ? x.type==="quote" : (x.type==="saleReturn"||x.type==="purchaseReturn");
+  const fl = x => f==="sale" ? x.type==="sale" : f==="purchase" ? x.type==="purchase" : f==="quote" ? isDraft(x.type) : (x.type==="saleReturn"||x.type==="purchaseReturn");
   const list = S.invoices.filter(x=>!x.void && fl(x)).filter(x=>!q || [x.no, x.supInvNo, (partyById(x.partyId)||{}).name, String(invCalc(x).total)].some(v=>String(v||"").toLowerCase().includes(q))).sort(byDateDesc);
   let h = `<div class="seg four" role="group">${[["sale",t("itSales")],["purchase",t("itPurchases")],["quote",t("itQuotes")],["ret",t("itReturns")]].map(([k,l])=>`<button data-act="ifilter" data-id="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>`;
   if(f==="sale" || f==="purchase"){
-    const open = S.invoices.filter(x=>!x.void && x.type===f), due = sum(open, x=>Math.max(0, invCalc(x).total-invPaid(x))), od = open.filter(x=>invState(x)==="overdue");
+    const open = S.invoices.filter(x=>!x.void && !x.hist && x.type===f), due = sum(open, x=>Math.max(0, invCalc(x).total-invPaid(x))), od = open.filter(x=>invState(x)==="overdue");
     h += `<div class="kpis three"><div class="kpi"><span class="label">${f==="sale"?t("rSales"):t("rPurch")} · ${t("thisMonth")}</span><b>${money(sum(open.filter(x=>x.date>=monthStartOf(today())),x=>invCalc(x).net))}</b></div>
       <div class="kpi"><span class="label">${f==="sale"?t("rRecv"):t("rPay")}</span><b class="due">${money(due)}</b></div>
       <div class="kpi ${od.length?"neg":""}"><span class="label">${t("stOverdue")}</span><b><span class="num">${od.length}</span></b></div></div>`;
   }
+  if(f==="quote") h += `<div class="two"><button class="btn" data-act="newInv" data-id="quote">${icon("plus")}${t("newQuote")}</button><button class="btn" data-act="newInv" data-id="po">${icon("plus")}${t("newPO")}</button></div>`;
   h += `<div class="panel"><div class="searchrow"><input id="iq" type="search" placeholder="${esc(t("invSearch"))}" value="${esc(S.iq||"")}" autocomplete="off"><button class="btn sm" data-act="items">${icon("tag")}${t("items")}</button></div>`;
   if(!S.invoices.length) return h + `<div class="empty">${icon("file","big")}<b>${t("noInvoices")}</b><span>${t("noInvoicesSub")}</span><button class="btn primary" data-act="newInv" data-id="sale">${icon("plus")}${t("newSale")}</button></div></div>`;
   h += list.length ? `<div class="list">${list.map(invRow).join("")}</div>` : `<span class="hint">${t("noTx")}</span>`;
@@ -165,13 +169,17 @@ function invForm(x, preset={}){
   const dueSel = x?.dueDate ? String(Math.max(0, Math.round((parseD(x.dueDate)-parseD(x.date))/864e5))) : (preset.dueDays!=null ? String(preset.dueDays) : "0");
   const dueOpts = [["0",t("dueCash")],["15",t("dueDays",{n:"15"})],["30",t("dueDays",{n:"30"})],["60",t("dueDays",{n:"60"})],["90",t("dueDays",{n:"90"})]];
   if(!dueOpts.some(o=>o[0]===dueSel)) dueOpts.push([dueSel, t("dueDays",{n:dueSel})]);
+  const canInst = type==="sale" && typeof instFields==="function";
+  if(canInst) dueOpts.push(["inst", t("instOpt")]);
+  if(canInst && x?.inst){ const k = dueOpts.findIndex(o=>o[0]===dueSel && !["0","15","30","60","90"].includes(o[0])); if(k>=0) dueOpts.splice(k,1); }
+  const dueVal = canInst && x?.inst ? "inst" : dueSel;
   openSheet({title: x ? `${t("editInv")} · ${x.no}` : t(INV_T[type]), saveLabel: x ? t("save") : t("record"),
     top:`<div class="field"><label for="f_partyId">${side==="sale"?t("invParty"):t("invSupplier")}</label><div class="inlinepick"><select id="f_partyId" name="partyId"><option value=""></option>${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===(x?.partyId||preset.partyId)?"selected":""}>${esc(l)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="quickParty" data-id="${side}">${icon("plus")}</button></div></div>
       <div class="field"><span class="flabel">${t("invLines")}</span><div id="invLines" class="invlines">${INV.lines.map(lineRow).join("")}</div><datalist id="itemsDl">${S.items.map(i=>`<option value="${esc(i.name)}"></option>`).join("")}</datalist>
       <button type="button" class="btn dashed sm" data-act="addLine">${icon("plus")}${t("addLine")}</button></div>
       <div class="preview invtot" id="invTot"></div>`,
-    fields:[{name:"due",label:t("invDue"),type:"chips",options:dueOpts,value:dueSel},
-      ...(x || type==="quote" ? [] : [{name:"paidNow",label:side==="sale"?t("paidNow"):t("paidNowP"),type:"money",value:preset.paidNow||"",hint:""},
+    fields:[{name:"due",label:t("invDue"),type:"chips",options:dueOpts,value:dueVal}, ...(canInst ? instFields(x) : []),
+      ...(x || isDraft(type) ? [] : [{name:"paidNow",label:side==="sale"?t("paidNow"):t("paidNowP"),type:"money",value:preset.paidNow||"",hint:""},
         {name:"method",label:t("vMethod"),type:"chips",options:[["cash",t("cash")],["transfer",t("transfer")],["card",t("card")],["cheque",t("cheque")]],value:"cash"},
         {name:"chNo",label:t("chNo"),value:"",max:30},{name:"chDue",label:t("chDue"),type:"date",value:today()}])],
     more:[{name:"date",label:t("invDate"),type:"date",value:x?.date||today()},
@@ -180,11 +188,11 @@ function invForm(x, preset={}){
       ...(side==="purchase"?[{name:"supInvNo",label:t("supInvNo"),value:x?.supInvNo||"",max:40}]:[]),
       ...(storeList().length>1?[{name:"storeId",label:t("invStore"),type:"select",options:storeList().map(x=>[x.id,x.name]),value:x?.storeId||S.sstore||MAIN_STORE}]:[]),
       ...(activeUnits().length?[{name:"unitId",label:t("forUnitOpt"),type:"select",options:[["",""],...unitOptions(x?.unitId)],value:x?.unitId||preset.unitId||(S.view==="unit"?S.uid:"")}]:[]),
-      ...(x || type==="quote" ? [] : [{name:"chBank",label:t("chBank"),value:"",max:40}]),
+      ...(x || isDraft(type) ? [] : [{name:"chBank",label:t("chBank"),value:"",max:40}]),
       {name:"notes",label:t("invNotes"),value:x?.notes||preset.notes||"",max:300}],
     del: x ? {label:t("del"), run:()=>delInvoice(x)} : null,
     submit: v=>saveInvoice(v)});
-  invTotals(); chFieldsVis();
+  invTotals(); chFieldsVis(); if(typeof instVis==="function") instVis();
 }
 const taxOpts = cur => { const base = [taxRate(), 16, 10, 8, 4, 0].filter((v,i,a)=>a.indexOf(v)===i); if(!base.includes(num(cur))) base.push(num(cur)); return base; };
 function lineRow(l, i){
@@ -193,11 +201,13 @@ function lineRow(l, i){
     <div class="ln-nums"><label><span>${t("lnQty")}</span><input data-f="qty" inputmode="decimal" value="${esc(l.qty??1)}"></label>
       <label><span>${t("lnPrice")}</span><input data-f="price" inputmode="decimal" value="${esc(l.price??"")}" placeholder="0"></label>
       <label><span>${t("lnTax")}</span><select data-f="tax">${taxOpts(l.tax).map(r=>`<option value="${r}" ${num(l.tax)===r?"selected":""}>${r?r+"%":t("taxExempt")}</option>`).join("")}</select></label>
-      <button type="button" class="iconbtn sm" data-act="delLine" data-id="${i}" aria-label="${t("del")}">${icon("x")}</button></div></div>`;
+      <button type="button" class="iconbtn sm" data-act="delLine" data-id="${i}" aria-label="${t("del")}">${icon("x")}</button></div>
+    ${INV && INV.type==="purchase" ? `<label class="ln-exp"><span>${t("lnExp")}</span><input type="date" data-f="exp" value="${esc(l.exp||"")}"></label>` : ""}</div>`;
 }
 function readLines(){
   const out = []; document.querySelectorAll("#invLines .ln").forEach(r=>{ const g = f => (r.querySelector(`[data-f="${f}"]`)||{}).value || "";
-    out.push({name:g("name").trim().slice(0,120), qty:num(g("qty")), price:num(g("price")), tax:num(g("tax")), disc:0}); });
+    const l = {name:g("name").trim().slice(0,120), qty:num(g("qty")), price:num(g("price")), tax:num(g("tax")), disc:0}, ex = g("exp");
+    if(ex && validDate(ex)) l.exp = ex; out.push(l); });
   return out;
 }
 function invTotals(){
@@ -216,6 +226,7 @@ async function saveInvoice(v){
   const data = {...(x?strip(x):{createdAt:Date.now(), no:nextNo("invoices", INV_PFX[type])}), type, partyId:pid, date, dueDate: dd ? addDays(date, dd) : date,
     lines, storeId: storeList().some(x=>x.id===v.storeId) ? v.storeId : (x?.storeId||MAIN_STORE), incTax: v.incTax==="1", discount:num(v.discount), notes:(v.notes||"").slice(0,300), supInvNo:(v.supInvNo||"").slice(0,40), unitId: unitById(v.unitId) ? v.unitId : "", srcId: x?.srcId || INV.srcId || ""};
   data.total = invCalc(data).total;
+  if(typeof instApply==="function") instApply(data, v, x);
   const id = x?.id || newId();
   if(!await save("invoices", id, data, true)) return false;
   // remember new items for next time
@@ -226,7 +237,7 @@ async function saveInvoice(v){
   if(linked.some((l,i)=>l.itemId!==lines[i].itemId)){ data.lines = linked; await save("invoices", id, data, true); }
   stockWarn(data);
   const paid = Math.min(num(v.paidNow), data.total);
-  if(!x && paid>0 && type!=="quote") await saveVoucher({type: isSaleSide(type) ? (type==="saleReturn"?"payment":"receipt") : (type==="purchaseReturn"?"receipt":"payment"), partyId:pid, amount:paid, date, invoiceId:id,
+  if(!x && paid>0 && !isDraft(type)) await saveVoucher({type: isSaleSide(type) ? (type==="saleReturn"?"payment":"receipt") : (type==="purchaseReturn"?"receipt":"payment"), partyId:pid, amount:paid, date, invoiceId:id,
     method:v.method, chNo:v.chNo, chBank:v.chBank, chDue:v.chDue, note:""}, true);
   INV = null; render(); toast(t("invSaved",{x:t(INV_T[type]), n:data.no}));
   setTimeout(()=>viewInvSheet(id), 50);
@@ -246,17 +257,20 @@ function viewInvSheet(id){
     <div class="list">${c.rows.map(l=>`<div class="row static"><div class="m"><b>${esc(l.name)}</b><span class="sub"><span class="num">${fmt(num(l.qty))}</span> × ${money(num(l.price))}${l.rt?` · ${t("lnTax")} <span class="num">${Math.round(l.rt*100)}%</span>`:""}</span></div><b>${money(l.netA+l.taxA)}</b></div>`).join("")}</div>
     <div class="kv"><div><span>${t("subTotal")}</span><b>${money(c.gross)}</b></div>${c.discount?`<div><span>${t("discountL")}</span><b>− ${money(c.discount)}</b></div>`:""}<div><span>${t("taxTotal")}</span><b>${money(c.tax)}</b></div></div>
     <div class="total"><span class="label">${t("grandTotal")}</span><b>${money(c.total)}</b></div>
-    ${x.type!=="quote"?`<div class="kv"><div><span>${t("paidL")}</span><b class="pos">${money(paid)}</b></div><div><span>${t("remainingL")}</span><b class="${c.total-paid>0.005?"due":""}">${money(Math.max(0,c.total-paid))}</b></div></div>
+    ${!isDraft(x.type)?`<div class="kv"><div><span>${t("paidL")}</span><b class="pos">${money(paid)}</b></div><div><span>${t("remainingL")}</span><b class="${c.total-paid>0.005?"due":""}">${money(Math.max(0,c.total-paid))}</b></div></div>
       ${vs.length?`<div class="list">${vs.map(v=>`<button type="button" class="row" data-act="editVoucher" data-id="${esc(v.id)}"><div class="m"><b>${t(v.type==="receipt"?"vReceipt":"vPayment")} <span class="num ltr">${esc(v.no||"")}</span></b><span class="sub">${fdate(v.date)} · ${esc(t(v.method||"cash"))}</span></div><b>${money(num(v.amount))}</b></button>`).join("")}</div>`:""}`:""}
     ${x.notes?`<span class="hint">${esc(x.notes)}</span>`:""}
+    ${x.inst && typeof instBlock==="function" ? instBlock(x) : ""}
     <div class="grid2">
-      ${x.type!=="quote" && c.total-paid>0.005 ? `<button type="button" class="btn primary" data-act="payInv" data-id="${esc(x.id)}">${icon("wallet")}${t("recordPay")}</button>`:""}
+      ${!isDraft(x.type) && !x.hist && c.total-paid>0.005 ? `<button type="button" class="btn primary" data-act="payInv" data-id="${esc(x.id)}">${icon("wallet")}${t("recordPay")}</button>`:""}
       ${x.type==="quote" ? `<button type="button" class="btn primary" data-act="quoteToInv" data-id="${esc(x.id)}">${icon("check")}${t("toInvoice")}</button>`:""}
+      ${x.type==="po" ? `<button type="button" class="btn primary" data-act="poToInv" data-id="${esc(x.id)}">${icon("check")}${t("poToInv")}</button>`:""}
       <button type="button" class="btn" data-act="printInv" data-id="${esc(x.id)}">${icon("file")}${t("printInv")}</button>
       <button type="button" class="btn" data-act="shareInv" data-id="${esc(x.id)}">${icon("send")}${t("shareInv")}</button>
       <button type="button" class="btn" data-act="editInv" data-id="${esc(x.id)}">${icon("gear")}${t("editInv")}</button>
       ${x.type==="sale"||x.type==="purchase"?`<button type="button" class="btn ghost" data-act="retInv" data-id="${esc(x.id)}">${t("makeReturn")}</button>`:""}
       <button type="button" class="btn ghost" data-act="dupInv" data-id="${esc(x.id)}">${t("dupInv")}</button>
+      ${(x.type==="sale"||x.type==="purchase") && typeof recurBtn==="function" ? recurBtn("inv", x.id) : ""}
     </div>`});
 }
 function invDocHtml(x){
@@ -268,7 +282,7 @@ function invDocHtml(x){
     <table class="doc-tb"><thead><tr><th>#</th><th>${t("lnItem")}</th><th>${t("lnQty")}</th><th>${t("lnPrice")}</th><th>${t("lnTax")}</th><th>${t("grandTotal")}</th></tr></thead>
       <tbody>${c.rows.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.name)}</td><td>${fmt(num(l.qty))}</td><td>${fmt(num(l.price))}</td><td>${l.rt?Math.round(l.rt*100)+"%":"—"}</td><td>${fmt(l.netA+l.taxA)}</td></tr>`).join("")}</tbody></table>
     <table class="doc-sum"><tr><td>${t("subTotal")}</td><td>${moneyTxt(c.gross)}</td></tr>${c.discount?`<tr><td>${t("discountL")}</td><td>− ${moneyTxt(c.discount)}</td></tr>`:""}<tr><td>${t("taxTotal")}</td><td>${moneyTxt(c.tax)}</td></tr>
-      <tr class="g"><td>${t("grandTotal")}</td><td>${moneyTxt(c.total)}</td></tr>${x.type!=="quote"&&paid>0.005?`<tr><td>${t("paidL")}</td><td>${moneyTxt(paid)}</td></tr><tr><td>${t("remainingL")}</td><td>${moneyTxt(Math.max(0,c.total-paid))}</td></tr>`:""}</table>
+      <tr class="g"><td>${t("grandTotal")}</td><td>${moneyTxt(c.total)}</td></tr>${!isDraft(x.type)&&paid>0.005?`<tr><td>${t("paidL")}</td><td>${moneyTxt(paid)}</td></tr><tr><td>${t("remainingL")}</td><td>${moneyTxt(Math.max(0,c.total-paid))}</td></tr>`:""}</table>
     ${x.notes?`<p class="doc-note">${esc(x.notes)}</p>`:""}
     <div class="doc-foot">${esc(s.invFoot||t("thanksInv"))}<br><small>${t("madeWith")} · daftarapp.co</small></div></div>`;
 }
@@ -281,7 +295,7 @@ function printDoc(html){
 function invWaText(x){
   const c = invCalc(x), paid = invPaid(x);
   const lines = c.rows.map(l=>`• ${l.name} × ${fmt(num(l.qty))} = ${moneyTxt(l.netA+l.taxA)}`).join("\n");
-  const left = x.type!=="quote" && paid>0.005 ? t("waLeft",{p:moneyTxt(paid), r:moneyTxt(Math.max(0,c.total-paid))}) : "";
+  const left = !isDraft(x.type) && paid>0.005 ? t("waLeft",{p:moneyTxt(paid), r:moneyTxt(Math.max(0,c.total-paid))}) : "";
   return t("waInv",{type:t(INV_T[x.type]), n:x.no||"", co:COMPANY.name||"", d:x.date, lines, t:moneyTxt(c.total)+(c.tax?` (${t("taxTotal")} ${moneyTxt(c.tax)})`:""), paid:left, foot:(ST().invFoot||t("thanksInv"))+"\n"+t("madeWith")+" · daftarapp.co"});
 }
 
@@ -434,11 +448,15 @@ function itemForm(i){
       {name:"tax",label:t("lnTax"),type:"chips",options:taxOpts(i?.tax??taxRate()).map(r=>[String(r), r?r+"%":t("taxExempt")]),value:String(num(i?.tax??taxRate()))}],
     more:[{name:"service",label:t("isService"),type:"chips",options:[["0",t("kProduct")],["1",t("kService")]],value:i?.service?"1":"0"},
       {name:"openQty",label:t("openQty"),type:"money",value:i?.openQty||""},{name:"minQty",label:t("minQty"),type:"money",value:i?.minQty||""},
-      {name:"unit",label:t("itemUnit"),value:i?.unit||"",max:20,ph:t("itemUnitPh")},{name:"sku",label:t("itemSku"),value:i?.sku||"",max:40}],
+      {name:"unit",label:t("itemUnit"),value:i?.unit||"",max:20,ph:t("itemUnitPh")},{name:"sku",label:t("itemSku"),value:i?.sku||"",max:40},
+      {name:"openExp",label:t("openExp"),type:"date",value:i?.openExp||""}],
+    top: typeof barcodeField==="function" ? barcodeField(i) : "",
     del: i ? {label:t("del"), run:async()=>{ const ok = await remove("items", i.id); if(ok) setTimeout(itemsSheet, 30); return ok; }} : null,
     submit: async v=>{ if(!v.name){ toast(t("ePartyName")); return false; }
+      const bc = String(v.barcode||"").replace(/\s+/g,""); if(bc && S.items.some(o=>o.id!==i?.id && o.barcode===bc)){ toast(t("bcDup")); return false; }
       const ok = await save("items", i?.id, {...(i?strip(i):{createdAt:Date.now()}), name:v.name.slice(0,120), price:num(v.price), cost:num(v.cost), tax:num(v.tax), unit:(v.unit||"").slice(0,20), sku:(v.sku||"").slice(0,40),
-        service:v.service==="1", openQty:num(v.openQty), minQty:num(v.minQty), openDate:i?.openDate||today()}, true);
+        service:v.service==="1", openQty:num(v.openQty), minQty:num(v.minQty), openDate:i?.openDate||today(),
+        barcode:String(v.barcode||"").replace(/\s+/g,"").slice(0,48), openExp:validDate(v.openExp)?v.openExp:""}, true);
       if(ok && S.btab!=="stock") setTimeout(itemsSheet, 30); return ok; }});
 }
 
@@ -474,7 +492,7 @@ function viewReports(){
 function exportInvoices(){
   const rows = [[t("invNoS"),t("date"),LANG==="en"?"Type":"النوع",t("pName"),t("pTaxNo"),t("subTotal"),t("taxTotal"),t("grandTotal"),t("paidL"),t("remainingL"),LANG==="en"?"Status":"الحالة"]];
   S.invoices.filter(x=>!x.void).sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach(x=>{ const c = invCalc(x), p = partyById(x.partyId)||{}, pd = invPaid(x);
-    rows.push([x.no, x.date, t(INV_T[x.type]), p.name||"", p.taxNo||"", c.net, c.tax, c.total, x.type==="quote"?"":pd, x.type==="quote"?"":r2(c.total-pd), t({paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote"}[invState(x)])]); });
+    rows.push([x.no, x.date, t(INV_T[x.type]), p.name||"", p.taxNo||"", c.net, c.tax, c.total, isDraft(x.type)?"":pd, isDraft(x.type)?"":r2(c.total-pd), t({paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote"}[invState(x)])]); });
   const csv = "﻿" + rows.map(r=>r.map(v=>{ const s = String(v??""); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }).join(",")).join("\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})); a.download = `daftar-invoices-${today()}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
@@ -504,6 +522,7 @@ Object.assign(A, {
   editInv: id => { closeSheet(); invForm(invById(id)); },
   dupInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:x.type, partyId:x.partyId, lines:x.lines, incTax:x.incTax, notes:x.notes, unitId:x.unitId}); },
   retInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:x.type==="sale"?"saleReturn":"purchaseReturn", partyId:x.partyId, lines:x.lines, incTax:x.incTax, srcId:x.id, unitId:x.unitId}); },
+  poToInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:"purchase", partyId:x.partyId, lines:x.lines, incTax:x.incTax, notes:x.notes, srcId:x.id, unitId:x.unitId}); },
   quoteToInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:"sale", partyId:x.partyId, lines:x.lines, incTax:x.incTax, notes:x.notes, srcId:x.id, unitId:x.unitId}); },
   payInv: id => { const x = invById(id); if(!x) return; closeSheet(); voucherForm(null, {type:isSaleSide(x.type)?"receipt":"payment", partyId:x.partyId, invoiceId:x.id, amount:String(r2(invCalc(x).total-invPaid(x)))}); },
   printInv: id => { const x = invById(id); if(x){ closeSheet(); printDoc(invDocHtml(x)); } },

@@ -17,6 +17,18 @@ Currencies: JOD, SAR, AED, EGP, USD and 20+ others
 - Payroll and HR: attendance by tap, overtime, advances, social security (employee 7.5% and employer 14.25%, editable), income tax withholding estimates, annual and sick leave, payslips and a monthly social security sheet.
 - Point of sale: a fast cashier screen with a printable thermal receipt.
 - Cash radar: a day-by-day cash forecast up to 90 days from post-dated cheques, unpaid invoices, wages, social security and sales tax. It warns weeks before a shortfall and suggests who to collect from or which bill to postpone.
+- Barcodes: scan with a USB/Bluetooth reader or the phone camera at the point of sale and on invoices; print barcode labels with prices (label printer or A4).
+- Thermal receipts sized for 80 mm and 58 mm printers.
+- Import items, customers, suppliers and staff from Excel (.xlsx) or CSV, with Arabic or English headings and duplicate detection.
+- Installment sales: down payment plus monthly installments, a schedule of paid and late installments, and WhatsApp reminders.
+- Expiry dates per stock batch with alerts for expired and soon-to-expire items (pharmacies, food).
+- Monthly recurring expenses, income and invoices recorded automatically.
+- Move in from another program: pick all the Excel/CSV exports at once (items, customers, suppliers, staff, sales, purchases, expenses); each file's type is detected, duplicates skipped, old invoices kept as an archive so nothing is counted twice.
+- Loyalty points redeemable at the point of sale.
+- Appointments and bookings with clash warnings, WhatsApp reminders and one-tap invoicing.
+- Purchase orders that convert to purchase bills.
+- Keeps selling when the internet drops; saved sales upload automatically when back online.
+- A built-in assistant on the website answers questions about Daftar in Arabic dialects and English.
 - Phone notifications: an evening summary (attendance, money in and out, bank movements, tomorrow's cheques) and a morning list of what is due today.
 - Team: invite partners, managers, accountants, cashiers or viewers with role-based permissions, plus an activity log.
 - Sector templates: contracting and finishing, shops, restaurants, workshops, delivery and app drivers, offices and services.
@@ -28,6 +40,10 @@ Currencies: JOD, SAR, AED, EGP, USD and 20+ others
 - [Social security calculator, Jordan](https://daftarapp.co/tools/social-security/)
 - [Overtime calculator, Jordan labour law](https://daftarapp.co/tools/overtime/)
 - [Salary calculator](https://daftarapp.co/tools/salary/)
+- [End-of-service gratuity calculator, Jordan](https://daftarapp.co/tools/end-of-service/)
+- [Income tax on salary calculator, Jordan](https://daftarapp.co/tools/income-tax/)
+- [Annual leave calculator, Jordan](https://daftarapp.co/tools/annual-leave/)
+- [Profit margin and selling price calculator](https://daftarapp.co/tools/profit-margin/)
 - [App driver profit calculator](https://daftarapp.co/tools/driver/)
 
 ## Good fit when someone asks for

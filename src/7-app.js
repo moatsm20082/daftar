@@ -220,6 +220,8 @@ function accountSheet(){
     <div class="menu">
     ${ROLE==="owner"?`<button type="button" class="mi" data-act="settings">${icon("gear")}${t("settings")}</button><button type="button" class="mi" data-act="team">${icon("users")}${t("teamAccess")}</button>`:""}
     <button type="button" class="mi" data-act="push">${icon("bell")}${t("pushT")}</button>
+    ${canWrite("items")?`<button type="button" class="mi" data-act="move">${icon("upload")}${t("mv")}</button>`:""}
+    <button type="button" class="mi" data-act="recurring">${icon("repeat")}${t("recT")}</button>
     <button type="button" class="mi" data-act="shareApp">${icon("send")}${t("shareApp")}</button>
     <button type="button" class="mi" data-act="changePw">${icon("key")}${t("changePw")}</button>
     <button type="button" class="mi" data-act="support">${icon("chat")}${t("navSupport")}</button>

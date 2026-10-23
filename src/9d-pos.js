@@ -27,11 +27,11 @@ function posOpen(){
   posRender();
 }
 function posRender(){
-  const q = (POS.q||"").toLowerCase(), items = S.items.filter(i=>num(i.price)>0 && (!q || String(i.name).toLowerCase().includes(q) || String(i.sku||"").toLowerCase()===q)).sort((a,b)=>String(a.name).localeCompare(String(b.name))).slice(0,60);
+  const q = (POS.q||"").toLowerCase(), items = S.items.filter(i=>num(i.price)>0 && (!q || String(i.name).toLowerCase().includes(q) || String(i.sku||"").toLowerCase()===q || String(i.barcode||"")===q)).sort((a,b)=>String(a.name).localeCompare(String(b.name))).slice(0,60);
   const c = invCalc({lines:POS.lines, incTax:ST().incTax});
   const custs = partyOptions("sale", POS.partyId).filter(([id])=>!(partyById(id)||{}).walkIn);
   openSheet({title:t("pos"), noSave:true, html:`
-    <input type="search" id="posq" class="whoq" placeholder="${esc(t("posSearch"))}" value="${esc(POS.q||"")}" autocomplete="off">
+    <div class="inlinepick"><input type="search" id="posq" class="whoq" placeholder="${esc(t("posSearch"))}" value="${esc(POS.q||"")}" autocomplete="off"><button type="button" class="btn sm" data-act="bcCam" data-id="pos" aria-label="${esc(t("bcScan"))}">${icon("scan")}</button></div>
     <div class="posgrid">${items.map(i=>{ const n = stocked(i) ? qtyOf(i.id) : null; return `<button type="button" class="postile" data-act="posAdd" data-id="${esc(i.id)}"><b>${esc(i.name)}</b><span>${money(num(i.price))}</span>${n!==null?`<small class="${n<=0?"negv":""}">${t("onHand")}: ${fmt(n)}${i.unit?" "+esc(i.unit):""}</small>`:""}</button>`; }).join("")}</div>
     <span class="label">${t("posCart")}</span>
     <div class="list">${POS.lines.length ? POS.lines.map((l,i)=>`<div class="row static"><div class="m"><b>${esc(l.name)}</b><span class="sub">${money(num(l.price))}</span></div>
@@ -45,7 +45,7 @@ function posRender(){
 async function posPay(method, el){
   if(!POS || !POS.lines.length) return; if(el) el.disabled = true;
   const pid = POS.partyId || await ensureWalkIn(); if(!pid){ if(el) el.disabled = false; return; }
-  const data = {type:"sale", no:nextNo("invoices","S"), partyId:pid, date:today(), dueDate:today(), lines:POS.lines.map(l=>({name:l.name, itemId:l.itemId, qty:l.qty, price:l.price, tax:l.tax, disc:0})), incTax:ST().incTax, discount:0, notes:"", pos:true, createdAt:Date.now()};
+  const data = {type:"sale", no:nextNo("invoices","S"), partyId:pid, date:today(), dueDate:today(), lines:POS.lines.map(l=>({name:l.name, itemId:l.itemId, qty:l.qty, price:l.price, tax:l.tax, disc:0})), incTax:ST().incTax, ...(typeof loyRedeemFor==="function" ? loyRedeemFor(POS) : {discount:0}), notes:"", pos:true, given:num((document.getElementById("posGiven")||{}).value), createdAt:Date.now()};
   data.total = invCalc(data).total; const id = newId();
   if(!await save("invoices", id, data, true)){ if(el) el.disabled = false; return; }
   await saveVoucher({type:"receipt", partyId:pid, amount:data.total, date:data.date, invoiceId:id, method}, true);
@@ -53,15 +53,8 @@ async function posPay(method, el){
   openSheet({title:t("posDone",{n:data.no}), noSave:true, html:`<div class="owe">${MARK}<span class="label">${t("grandTotal")}</span><b>${money(data.total)}</b></div>
     <div class="grid2"><button type="button" class="btn" data-act="posPrint" data-id="${esc(id)}">${icon("file")}${t("posReceipt")}</button><button type="button" class="btn primary" data-act="pos">${icon("plus")}${t("posNew")}</button></div>`});
 }
-function receiptHtml(x){
-  const c = invCalc(x);
-  return `<div class="doc rcpt"><h1>${esc(COMPANY.name||"")}</h1>${ST().taxNo?`<div>${t("taxNoL")}: ${esc(ST().taxNo)}</div>`:""}<div>${esc(x.no)} · ${esc(x.date)}</div><hr>
-    ${c.rows.map(l=>`<div class="rl"><span>${esc(l.name)} × ${fmt(num(l.qty))}</span><span>${fmt(l.netA+l.taxA)}</span></div>`).join("")}<hr>
-    <div class="rl"><span>${t("taxTotal")}</span><span>${fmt(c.tax)}</span></div><div class="rl g"><span>${t("grandTotal")}</span><span>${moneyTxt(c.total)}</span></div><hr><div>${esc(ST().invFoot||t("thanksInv"))}</div><small>daftarapp.co</small></div>`;
-}
-
 /* ----- roles: what each person may change (the database enforces the same rules) ----- */
-const CASHIER_COLS = ["invoices","vouchers","parties","items","cheques"];
+const CASHIER_COLS = ["invoices","vouchers","parties","items","cheques","appointments"];
 const canWrite = col => !ROLE || ROLE==="owner" || ROLE==="member" || ROLE==="manager" || ROLE==="accountant" || (ROLE==="cashier" && CASHIER_COLS.includes(col));
 const canDelete = col => !ROLE || ["owner","member","manager","accountant"].includes(ROLE);
 const ROLE_L = {owner:"roleOwner", member:"roleMemberL", manager:"roleManager", accountant:"roleAccountant", cashier:"roleCashier", viewer:"roleViewer"};

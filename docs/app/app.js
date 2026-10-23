@@ -401,7 +401,7 @@ const ST = () => { const s = (COMPANY && COMPANY.settings) || {};
     shiftIn: s.shiftIn || "08:00", shiftOut: s.shiftOut || "17:00", payPeriod: s.payPeriod==="month"||s.payPeriod==="week" ? s.payPeriod : null,
     otMult: [1,1.25,1.5].includes(Number(s.otMult)) ? Number(s.otMult) : 1,
     taxNo: String(s.taxNo||""), address: String(s.address||""), taxRate: s.taxRate===undefined||s.taxRate===null||s.taxRate==="" ? 16 : Math.max(0,Math.min(50,Number(s.taxRate)||0)),
-    incTax: !!s.incTax, invFoot: String(s.invFoot||"") }; };
+    incTax: !!s.incTax, invFoot: String(s.invFoot||""), paper: ["80","58"].includes(String(s.paper)) ? String(s.paper) : "a4" }; };
 const PRE = () => P[ST().type];
 const LI = () => LANG==="en" ? 1 : 0;
 const term = (k, plural) => { const p = PRE()[k][LI()]; return plural ? p[1] : p[0]; };
@@ -538,7 +538,10 @@ async function save(col,id,data,quiet){
   if(!sb || !CID){ toast(t("signInFirst")); return false; }
   id = id || newId();
   const { error } = await sb.from("records").upsert({company_id:CID, col, id, data}, {onConflict:"company_id,col,id"});
-  if(error){ toast(errMsg(error)); return false; }
+  if(error){
+    // no internet: shop work (sales, receipts, customers) is kept on the device and sent later
+    if(typeof outboxTake==="function" && outboxTake(col, id, data, error)){ applyLocal(col,id,data); if(!quiet) render(); return true; }
+    toast(errMsg(error)); return false; }
   applyLocal(col,id,data); if(!quiet) render(); return true;
 }
 async function remove(col,id){
@@ -612,7 +615,7 @@ function viewHome(){
   const hasBooks = S.invoices.length>0 || S.vouchers.length>0;
   if(!hasBooks && !(hasUnit && hasStaff && (hasAtt||hasMoney))){
     const steps = [[hasUnit, tv("ob1"), "newUnit"], [hasStaff, tv("ob2"), hasUnit?"openFirst":"newUnit"], [hasAtt||hasMoney, tv("ob3"), hasUnit?"openFirst":"newUnit"]];
-    return h + (hasUnit ? "" : `<div class="panel demo-cta"><div class="col"><b>${t("demoT")}</b><span class="sub">${t("demoS")}</span></div><button class="btn primary" data-act="demoLoad">${icon("bolt")}${t("demoBtn")}</button></div>`)
+    return h + (typeof moveHomeCard==="function" ? moveHomeCard() : "") + (hasUnit ? "" : `<div class="panel demo-cta"><div class="col"><b>${t("demoT")}</b><span class="sub">${t("demoS")}</span></div><button class="btn primary" data-act="demoLoad">${icon("bolt")}${t("demoBtn")}</button></div>`)
       + `<div class="panel start"><b class="start-t">${t("obStart")}</b><span class="sub">${t("obStartSub")}</span>
       <ol class="steps">${steps.map(([done,txt,act],i)=>`<li class="${done?"done":""}"><span class="step-n">${done?icon("check"):`<span class="num">${i+1}</span>`}</span><span class="step-t">${txt}</span>${done?"":`<button class="btn sm ${steps.findIndex(x=>!x[0])===i?"primary":""}" data-act="${act}">${t("doIt")}</button>`}</li>`).join("")}</ol></div>`
       + (hasUnit ? `<div class="qgrid home-q">${quickTiles()}</div><div class="folders">${activeUnits().slice(0,4).map(folder).join("")}</div>` : "");
@@ -626,6 +629,8 @@ function viewHome(){
     <div class="kpi hero ${m.profit<0?"neg":""}"><span class="label">${m.profit<0?t("loss"):t("profit")} · ${t("thisMonth")}</span><b>${money(Math.abs(m.profit))}</b></div></div>`;
   if(typeof radarHomeCard==="function") h += radarHomeCard();
   if(typeof pushHomeCard==="function") h += pushHomeCard();
+  if(typeof moveHomeCard==="function") h += moveHomeCard();
+  if(typeof apHomeCard==="function") h += apHomeCard();
   // trend
   const months = [...Array(6)].map((_,i)=>addMonths(ms,i-5));
   const vals = months.map(x=>companyTotals(x, monthEnd(x)).profit), mx = Math.max(1,...vals.map(Math.abs));
@@ -1176,13 +1181,14 @@ function settingsSheet(){
       {name:"taxRate",label:t("setTax"),type:"chips",options:[["16","16%"],["10","10%"],["8","8%"],["4","4%"],["0",t("taxExempt")]],value:String(s.taxRate===undefined||s.taxRate===null||s.taxRate===""?16:s.taxRate)},
       {name:"incTax",label:t("setIncTax"),type:"chips",options:[["0",LANG==="en"?"No":"لا"],["1",LANG==="en"?"Yes":"آه"]],value:s.incTax?"1":"0"},
       {name:"invFoot",label:t("setInvFoot"),value:s.invFoot||"",max:120,ph:t("thanksInv")},
+      {name:"paper",label:t("setPaper"),type:"chips",options:[["a4",t("paperA4")],["80",t("paper80")],["58",t("paper58")]],value:s.paper,hint:t("paperHint")},
       {name:"ssEmp",label:t("setSSEmp"),type:"money",value:String((COMPANY.settings||{}).ssEmp ?? 7.5),hint:t("hrSSHint")},{name:"ssEr",label:t("setSSEr"),type:"money",value:String((COMPANY.settings||{}).ssEr ?? 14.25)},
       {name:"ssCap",label:t("setSSCap"),type:"money",value:String((COMPANY.settings||{}).ssCap ?? 3733)}],
     submit: async v=>{
       if(!v.name || v.name.length<2){ toast(t("eName")); return false; }
       const settings = {...(COMPANY.settings||{}), type:P[v.type]?v.type:"other", currency:CUR[v.currency]?v.currency:"JOD", lang:v.lang==="en"?"en":"ar",
         weekend:(v.weekend||[]).map(Number).filter(n=>n>=0&&n<=6), shiftIn:mins(v.shiftIn)!=null?v.shiftIn:"08:00", shiftOut:mins(v.shiftOut)!=null?v.shiftOut:"17:00", payPeriod:v.payPeriod==="month"?"month":"week", otMult:[1,1.25,1.5].includes(Number(v.otMult))?Number(v.otMult):1,
-        taxNo:(v.taxNo||"").slice(0,30), address:(v.address||"").slice(0,120), taxRate:Math.max(0,Math.min(50,num(v.taxRate))), incTax:v.incTax==="1", invFoot:(v.invFoot||"").slice(0,120),
+        taxNo:(v.taxNo||"").slice(0,30), address:(v.address||"").slice(0,120), taxRate:Math.max(0,Math.min(50,num(v.taxRate))), incTax:v.incTax==="1", invFoot:(v.invFoot||"").slice(0,120), paper:["80","58"].includes(v.paper)?v.paper:"a4",
         ssEmp:Math.max(0,Math.min(30,num(v.ssEmp))), ssEr:Math.max(0,Math.min(40,num(v.ssEr))), ssCap:num(v.ssCap)||3733};
       return applySettings({name:v.name.slice(0,80), phone:(v.phone||"").slice(0,30)||null, settings});
     }});
@@ -1747,6 +1753,8 @@ function accountSheet(){
     <div class="menu">
     ${ROLE==="owner"?`<button type="button" class="mi" data-act="settings">${icon("gear")}${t("settings")}</button><button type="button" class="mi" data-act="team">${icon("users")}${t("teamAccess")}</button>`:""}
     <button type="button" class="mi" data-act="push">${icon("bell")}${t("pushT")}</button>
+    ${canWrite("items")?`<button type="button" class="mi" data-act="move">${icon("upload")}${t("mv")}</button>`:""}
+    <button type="button" class="mi" data-act="recurring">${icon("repeat")}${t("recT")}</button>
     <button type="button" class="mi" data-act="shareApp">${icon("send")}${t("shareApp")}</button>
     <button type="button" class="mi" data-act="changePw">${icon("key")}${t("changePw")}</button>
     <button type="button" class="mi" data-act="support">${icon("chat")}${t("navSupport")}</button>
@@ -1920,7 +1928,7 @@ Object.assign(L, {
   bkMoneyT:["الحسابات","Accounts"],
   // invoice types
   itSale:["فاتورة بيع","Sales invoice"], itPurchase:["فاتورة شراء","Purchase bill"], itSaleRet:["مرتجع مبيعات","Sales return"], itPurRet:["مرتجع مشتريات","Purchase return"], itQuote:["عرض سعر","Quotation"],
-  itSales:["المبيعات","Sales"], itPurchases:["المشتريات","Purchases"], itQuotes:["عروض الأسعار","Quotes"], itReturns:["المرتجعات","Returns"],
+  itSales:["المبيعات","Sales"], itPurchases:["المشتريات","Purchases"], itQuotes:["عروض وطلبات","Quotes & orders"], itPO:["طلب شراء","Purchase order"], stPO:["طلب شراء","Order"], stDone:["تحوّل لفاتورة","Converted"], newQuote:["عرض سعر جديد","New quote"], newPO:["طلب شراء جديد","New purchase order"], poToInv:["وصلت البضاعة: حوّله لفاتورة شراء","Goods arrived: make a purchase bill"], itReturns:["المرتجعات","Returns"],
   newSale:["فاتورة بيع","Sales invoice"], newPurchase:["فاتورة شراء","Purchase bill"],
   // parties
   pCustomer:["زبون","Customer"], pSupplier:["مورّد","Supplier"], pBoth:["زبون ومورّد","Both"], pCustomers:["الزباين","Customers"], pSuppliers:["الموردين","Suppliers"],
@@ -1980,8 +1988,10 @@ BOOK_COLS.forEach(c=>{ if(!COLS.includes(c)) COLS.push(c); S[c] = S[c] || []; })
 
 /* ----- numbers & helpers ----- */
 const r2 = n => Math.round((n||0)*100)/100;
-const INV_PFX = {sale:"S", purchase:"P", saleReturn:"SR", purchaseReturn:"PR", quote:"Q"};
-const INV_T = {sale:"itSale", purchase:"itPurchase", saleReturn:"itSaleRet", purchaseReturn:"itPurRet", quote:"itQuote"};
+const INV_PFX = {sale:"S", purchase:"P", saleReturn:"SR", purchaseReturn:"PR", quote:"Q", po:"PO"};
+const INV_T = {sale:"itSale", purchase:"itPurchase", saleReturn:"itSaleRet", purchaseReturn:"itPurRet", quote:"itQuote", po:"itPO"};
+/* drafts: a quote to a customer or a purchase order to a supplier. They move nothing until converted. */
+const isDraft = tp => tp==="quote" || tp==="po";
 const isSaleSide = tp => tp==="sale" || tp==="saleReturn" || tp==="quote";
 const taxRate = () => ST().taxRate;
 const partyById = id => S.parties.find(p=>p.id===id);
@@ -2000,17 +2010,18 @@ function invCalc(inv){
   return {rows, gross:r2(sumNet), discount:r2(d), net, tax, total:r2(net+tax)};
 }
 const invSign = tp => tp==="sale" ? 1 : tp==="saleReturn" ? -1 : tp==="purchase" ? -1 : tp==="purchaseReturn" ? 1 : 0;   // + means the party owes us more
-const liveInv = () => S.invoices.filter(x=>x.type!=="quote" && !x.void);
+const liveInv = () => S.invoices.filter(x=>!isDraft(x.type) && !x.void && !x.hist);   // hist: old invoices moved in for reference only
 const liveVouch = () => S.vouchers.filter(v=>!v.void);
 function invPaid(inv){ return r2(sum(liveVouch().filter(v=>v.invoiceId===inv.id), v=>num(v.amount))); }
 function invState(inv){
-  if(inv.type==="quote") return "quote";
+  if(isDraft(inv.type)) return S.invoices.some(i=>i.srcId===inv.id && !i.void && !isDraft(i.type)) ? "done" : inv.type;
+  if(inv.hist) return "arch";
   const tot = invCalc(inv).total, p = invPaid(inv);
   if(tot<=0.005 || p>=tot-0.005) return "paid";
   if(inv.dueDate && inv.dueDate<today()) return "overdue";
   return p>0.005 ? "partial" : "unpaid";
 }
-const stPill = st => `<span class="pill ${st==="paid"?"good":st==="overdue"?"bad":st==="quote"?"":"warn"}">${t({paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote"}[st])}</span>`;
+const stPill = st => `<span class="pill ${st==="paid"?"good":st==="overdue"?"bad":st==="quote"||st==="po"||st==="arch"?"":st==="done"?"good":"warn"}">${t({done:"stDone",paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote",po:"stPO",arch:"stArch"}[st])}</span>`;
 /* party balance: + they owe us, − we owe them */
 function partyLedger(pid, a, b){
   const p = partyById(pid); const rows = [];
@@ -2047,15 +2058,16 @@ function viewBooks(){
 /* ----- invoices list ----- */
 function viewInvoices(){
   const f = S.ifilter || "sale", q = (S.iq||"").trim().toLowerCase();
-  const fl = x => f==="sale" ? x.type==="sale" : f==="purchase" ? x.type==="purchase" : f==="quote" ? x.type==="quote" : (x.type==="saleReturn"||x.type==="purchaseReturn");
+  const fl = x => f==="sale" ? x.type==="sale" : f==="purchase" ? x.type==="purchase" : f==="quote" ? isDraft(x.type) : (x.type==="saleReturn"||x.type==="purchaseReturn");
   const list = S.invoices.filter(x=>!x.void && fl(x)).filter(x=>!q || [x.no, x.supInvNo, (partyById(x.partyId)||{}).name, String(invCalc(x).total)].some(v=>String(v||"").toLowerCase().includes(q))).sort(byDateDesc);
   let h = `<div class="seg four" role="group">${[["sale",t("itSales")],["purchase",t("itPurchases")],["quote",t("itQuotes")],["ret",t("itReturns")]].map(([k,l])=>`<button data-act="ifilter" data-id="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>`;
   if(f==="sale" || f==="purchase"){
-    const open = S.invoices.filter(x=>!x.void && x.type===f), due = sum(open, x=>Math.max(0, invCalc(x).total-invPaid(x))), od = open.filter(x=>invState(x)==="overdue");
+    const open = S.invoices.filter(x=>!x.void && !x.hist && x.type===f), due = sum(open, x=>Math.max(0, invCalc(x).total-invPaid(x))), od = open.filter(x=>invState(x)==="overdue");
     h += `<div class="kpis three"><div class="kpi"><span class="label">${f==="sale"?t("rSales"):t("rPurch")} · ${t("thisMonth")}</span><b>${money(sum(open.filter(x=>x.date>=monthStartOf(today())),x=>invCalc(x).net))}</b></div>
       <div class="kpi"><span class="label">${f==="sale"?t("rRecv"):t("rPay")}</span><b class="due">${money(due)}</b></div>
       <div class="kpi ${od.length?"neg":""}"><span class="label">${t("stOverdue")}</span><b><span class="num">${od.length}</span></b></div></div>`;
   }
+  if(f==="quote") h += `<div class="two"><button class="btn" data-act="newInv" data-id="quote">${icon("plus")}${t("newQuote")}</button><button class="btn" data-act="newInv" data-id="po">${icon("plus")}${t("newPO")}</button></div>`;
   h += `<div class="panel"><div class="searchrow"><input id="iq" type="search" placeholder="${esc(t("invSearch"))}" value="${esc(S.iq||"")}" autocomplete="off"><button class="btn sm" data-act="items">${icon("tag")}${t("items")}</button></div>`;
   if(!S.invoices.length) return h + `<div class="empty">${icon("file","big")}<b>${t("noInvoices")}</b><span>${t("noInvoicesSub")}</span><button class="btn primary" data-act="newInv" data-id="sale">${icon("plus")}${t("newSale")}</button></div></div>`;
   h += list.length ? `<div class="list">${list.map(invRow).join("")}</div>` : `<span class="hint">${t("noTx")}</span>`;
@@ -2077,13 +2089,17 @@ function invForm(x, preset={}){
   const dueSel = x?.dueDate ? String(Math.max(0, Math.round((parseD(x.dueDate)-parseD(x.date))/864e5))) : (preset.dueDays!=null ? String(preset.dueDays) : "0");
   const dueOpts = [["0",t("dueCash")],["15",t("dueDays",{n:"15"})],["30",t("dueDays",{n:"30"})],["60",t("dueDays",{n:"60"})],["90",t("dueDays",{n:"90"})]];
   if(!dueOpts.some(o=>o[0]===dueSel)) dueOpts.push([dueSel, t("dueDays",{n:dueSel})]);
+  const canInst = type==="sale" && typeof instFields==="function";
+  if(canInst) dueOpts.push(["inst", t("instOpt")]);
+  if(canInst && x?.inst){ const k = dueOpts.findIndex(o=>o[0]===dueSel && !["0","15","30","60","90"].includes(o[0])); if(k>=0) dueOpts.splice(k,1); }
+  const dueVal = canInst && x?.inst ? "inst" : dueSel;
   openSheet({title: x ? `${t("editInv")} · ${x.no}` : t(INV_T[type]), saveLabel: x ? t("save") : t("record"),
     top:`<div class="field"><label for="f_partyId">${side==="sale"?t("invParty"):t("invSupplier")}</label><div class="inlinepick"><select id="f_partyId" name="partyId"><option value=""></option>${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===(x?.partyId||preset.partyId)?"selected":""}>${esc(l)}</option>`).join("")}</select><button type="button" class="btn sm" data-act="quickParty" data-id="${side}">${icon("plus")}</button></div></div>
       <div class="field"><span class="flabel">${t("invLines")}</span><div id="invLines" class="invlines">${INV.lines.map(lineRow).join("")}</div><datalist id="itemsDl">${S.items.map(i=>`<option value="${esc(i.name)}"></option>`).join("")}</datalist>
       <button type="button" class="btn dashed sm" data-act="addLine">${icon("plus")}${t("addLine")}</button></div>
       <div class="preview invtot" id="invTot"></div>`,
-    fields:[{name:"due",label:t("invDue"),type:"chips",options:dueOpts,value:dueSel},
-      ...(x || type==="quote" ? [] : [{name:"paidNow",label:side==="sale"?t("paidNow"):t("paidNowP"),type:"money",value:preset.paidNow||"",hint:""},
+    fields:[{name:"due",label:t("invDue"),type:"chips",options:dueOpts,value:dueVal}, ...(canInst ? instFields(x) : []),
+      ...(x || isDraft(type) ? [] : [{name:"paidNow",label:side==="sale"?t("paidNow"):t("paidNowP"),type:"money",value:preset.paidNow||"",hint:""},
         {name:"method",label:t("vMethod"),type:"chips",options:[["cash",t("cash")],["transfer",t("transfer")],["card",t("card")],["cheque",t("cheque")]],value:"cash"},
         {name:"chNo",label:t("chNo"),value:"",max:30},{name:"chDue",label:t("chDue"),type:"date",value:today()}])],
     more:[{name:"date",label:t("invDate"),type:"date",value:x?.date||today()},
@@ -2092,11 +2108,11 @@ function invForm(x, preset={}){
       ...(side==="purchase"?[{name:"supInvNo",label:t("supInvNo"),value:x?.supInvNo||"",max:40}]:[]),
       ...(storeList().length>1?[{name:"storeId",label:t("invStore"),type:"select",options:storeList().map(x=>[x.id,x.name]),value:x?.storeId||S.sstore||MAIN_STORE}]:[]),
       ...(activeUnits().length?[{name:"unitId",label:t("forUnitOpt"),type:"select",options:[["",""],...unitOptions(x?.unitId)],value:x?.unitId||preset.unitId||(S.view==="unit"?S.uid:"")}]:[]),
-      ...(x || type==="quote" ? [] : [{name:"chBank",label:t("chBank"),value:"",max:40}]),
+      ...(x || isDraft(type) ? [] : [{name:"chBank",label:t("chBank"),value:"",max:40}]),
       {name:"notes",label:t("invNotes"),value:x?.notes||preset.notes||"",max:300}],
     del: x ? {label:t("del"), run:()=>delInvoice(x)} : null,
     submit: v=>saveInvoice(v)});
-  invTotals(); chFieldsVis();
+  invTotals(); chFieldsVis(); if(typeof instVis==="function") instVis();
 }
 const taxOpts = cur => { const base = [taxRate(), 16, 10, 8, 4, 0].filter((v,i,a)=>a.indexOf(v)===i); if(!base.includes(num(cur))) base.push(num(cur)); return base; };
 function lineRow(l, i){
@@ -2105,11 +2121,13 @@ function lineRow(l, i){
     <div class="ln-nums"><label><span>${t("lnQty")}</span><input data-f="qty" inputmode="decimal" value="${esc(l.qty??1)}"></label>
       <label><span>${t("lnPrice")}</span><input data-f="price" inputmode="decimal" value="${esc(l.price??"")}" placeholder="0"></label>
       <label><span>${t("lnTax")}</span><select data-f="tax">${taxOpts(l.tax).map(r=>`<option value="${r}" ${num(l.tax)===r?"selected":""}>${r?r+"%":t("taxExempt")}</option>`).join("")}</select></label>
-      <button type="button" class="iconbtn sm" data-act="delLine" data-id="${i}" aria-label="${t("del")}">${icon("x")}</button></div></div>`;
+      <button type="button" class="iconbtn sm" data-act="delLine" data-id="${i}" aria-label="${t("del")}">${icon("x")}</button></div>
+    ${INV && INV.type==="purchase" ? `<label class="ln-exp"><span>${t("lnExp")}</span><input type="date" data-f="exp" value="${esc(l.exp||"")}"></label>` : ""}</div>`;
 }
 function readLines(){
   const out = []; document.querySelectorAll("#invLines .ln").forEach(r=>{ const g = f => (r.querySelector(`[data-f="${f}"]`)||{}).value || "";
-    out.push({name:g("name").trim().slice(0,120), qty:num(g("qty")), price:num(g("price")), tax:num(g("tax")), disc:0}); });
+    const l = {name:g("name").trim().slice(0,120), qty:num(g("qty")), price:num(g("price")), tax:num(g("tax")), disc:0}, ex = g("exp");
+    if(ex && validDate(ex)) l.exp = ex; out.push(l); });
   return out;
 }
 function invTotals(){
@@ -2128,6 +2146,7 @@ async function saveInvoice(v){
   const data = {...(x?strip(x):{createdAt:Date.now(), no:nextNo("invoices", INV_PFX[type])}), type, partyId:pid, date, dueDate: dd ? addDays(date, dd) : date,
     lines, storeId: storeList().some(x=>x.id===v.storeId) ? v.storeId : (x?.storeId||MAIN_STORE), incTax: v.incTax==="1", discount:num(v.discount), notes:(v.notes||"").slice(0,300), supInvNo:(v.supInvNo||"").slice(0,40), unitId: unitById(v.unitId) ? v.unitId : "", srcId: x?.srcId || INV.srcId || ""};
   data.total = invCalc(data).total;
+  if(typeof instApply==="function") instApply(data, v, x);
   const id = x?.id || newId();
   if(!await save("invoices", id, data, true)) return false;
   // remember new items for next time
@@ -2138,7 +2157,7 @@ async function saveInvoice(v){
   if(linked.some((l,i)=>l.itemId!==lines[i].itemId)){ data.lines = linked; await save("invoices", id, data, true); }
   stockWarn(data);
   const paid = Math.min(num(v.paidNow), data.total);
-  if(!x && paid>0 && type!=="quote") await saveVoucher({type: isSaleSide(type) ? (type==="saleReturn"?"payment":"receipt") : (type==="purchaseReturn"?"receipt":"payment"), partyId:pid, amount:paid, date, invoiceId:id,
+  if(!x && paid>0 && !isDraft(type)) await saveVoucher({type: isSaleSide(type) ? (type==="saleReturn"?"payment":"receipt") : (type==="purchaseReturn"?"receipt":"payment"), partyId:pid, amount:paid, date, invoiceId:id,
     method:v.method, chNo:v.chNo, chBank:v.chBank, chDue:v.chDue, note:""}, true);
   INV = null; render(); toast(t("invSaved",{x:t(INV_T[type]), n:data.no}));
   setTimeout(()=>viewInvSheet(id), 50);
@@ -2158,17 +2177,20 @@ function viewInvSheet(id){
     <div class="list">${c.rows.map(l=>`<div class="row static"><div class="m"><b>${esc(l.name)}</b><span class="sub"><span class="num">${fmt(num(l.qty))}</span> × ${money(num(l.price))}${l.rt?` · ${t("lnTax")} <span class="num">${Math.round(l.rt*100)}%</span>`:""}</span></div><b>${money(l.netA+l.taxA)}</b></div>`).join("")}</div>
     <div class="kv"><div><span>${t("subTotal")}</span><b>${money(c.gross)}</b></div>${c.discount?`<div><span>${t("discountL")}</span><b>− ${money(c.discount)}</b></div>`:""}<div><span>${t("taxTotal")}</span><b>${money(c.tax)}</b></div></div>
     <div class="total"><span class="label">${t("grandTotal")}</span><b>${money(c.total)}</b></div>
-    ${x.type!=="quote"?`<div class="kv"><div><span>${t("paidL")}</span><b class="pos">${money(paid)}</b></div><div><span>${t("remainingL")}</span><b class="${c.total-paid>0.005?"due":""}">${money(Math.max(0,c.total-paid))}</b></div></div>
+    ${!isDraft(x.type)?`<div class="kv"><div><span>${t("paidL")}</span><b class="pos">${money(paid)}</b></div><div><span>${t("remainingL")}</span><b class="${c.total-paid>0.005?"due":""}">${money(Math.max(0,c.total-paid))}</b></div></div>
       ${vs.length?`<div class="list">${vs.map(v=>`<button type="button" class="row" data-act="editVoucher" data-id="${esc(v.id)}"><div class="m"><b>${t(v.type==="receipt"?"vReceipt":"vPayment")} <span class="num ltr">${esc(v.no||"")}</span></b><span class="sub">${fdate(v.date)} · ${esc(t(v.method||"cash"))}</span></div><b>${money(num(v.amount))}</b></button>`).join("")}</div>`:""}`:""}
     ${x.notes?`<span class="hint">${esc(x.notes)}</span>`:""}
+    ${x.inst && typeof instBlock==="function" ? instBlock(x) : ""}
     <div class="grid2">
-      ${x.type!=="quote" && c.total-paid>0.005 ? `<button type="button" class="btn primary" data-act="payInv" data-id="${esc(x.id)}">${icon("wallet")}${t("recordPay")}</button>`:""}
+      ${!isDraft(x.type) && !x.hist && c.total-paid>0.005 ? `<button type="button" class="btn primary" data-act="payInv" data-id="${esc(x.id)}">${icon("wallet")}${t("recordPay")}</button>`:""}
       ${x.type==="quote" ? `<button type="button" class="btn primary" data-act="quoteToInv" data-id="${esc(x.id)}">${icon("check")}${t("toInvoice")}</button>`:""}
+      ${x.type==="po" ? `<button type="button" class="btn primary" data-act="poToInv" data-id="${esc(x.id)}">${icon("check")}${t("poToInv")}</button>`:""}
       <button type="button" class="btn" data-act="printInv" data-id="${esc(x.id)}">${icon("file")}${t("printInv")}</button>
       <button type="button" class="btn" data-act="shareInv" data-id="${esc(x.id)}">${icon("send")}${t("shareInv")}</button>
       <button type="button" class="btn" data-act="editInv" data-id="${esc(x.id)}">${icon("gear")}${t("editInv")}</button>
       ${x.type==="sale"||x.type==="purchase"?`<button type="button" class="btn ghost" data-act="retInv" data-id="${esc(x.id)}">${t("makeReturn")}</button>`:""}
       <button type="button" class="btn ghost" data-act="dupInv" data-id="${esc(x.id)}">${t("dupInv")}</button>
+      ${(x.type==="sale"||x.type==="purchase") && typeof recurBtn==="function" ? recurBtn("inv", x.id) : ""}
     </div>`});
 }
 function invDocHtml(x){
@@ -2180,7 +2202,7 @@ function invDocHtml(x){
     <table class="doc-tb"><thead><tr><th>#</th><th>${t("lnItem")}</th><th>${t("lnQty")}</th><th>${t("lnPrice")}</th><th>${t("lnTax")}</th><th>${t("grandTotal")}</th></tr></thead>
       <tbody>${c.rows.map((l,i)=>`<tr><td>${i+1}</td><td>${esc(l.name)}</td><td>${fmt(num(l.qty))}</td><td>${fmt(num(l.price))}</td><td>${l.rt?Math.round(l.rt*100)+"%":"—"}</td><td>${fmt(l.netA+l.taxA)}</td></tr>`).join("")}</tbody></table>
     <table class="doc-sum"><tr><td>${t("subTotal")}</td><td>${moneyTxt(c.gross)}</td></tr>${c.discount?`<tr><td>${t("discountL")}</td><td>− ${moneyTxt(c.discount)}</td></tr>`:""}<tr><td>${t("taxTotal")}</td><td>${moneyTxt(c.tax)}</td></tr>
-      <tr class="g"><td>${t("grandTotal")}</td><td>${moneyTxt(c.total)}</td></tr>${x.type!=="quote"&&paid>0.005?`<tr><td>${t("paidL")}</td><td>${moneyTxt(paid)}</td></tr><tr><td>${t("remainingL")}</td><td>${moneyTxt(Math.max(0,c.total-paid))}</td></tr>`:""}</table>
+      <tr class="g"><td>${t("grandTotal")}</td><td>${moneyTxt(c.total)}</td></tr>${!isDraft(x.type)&&paid>0.005?`<tr><td>${t("paidL")}</td><td>${moneyTxt(paid)}</td></tr><tr><td>${t("remainingL")}</td><td>${moneyTxt(Math.max(0,c.total-paid))}</td></tr>`:""}</table>
     ${x.notes?`<p class="doc-note">${esc(x.notes)}</p>`:""}
     <div class="doc-foot">${esc(s.invFoot||t("thanksInv"))}<br><small>${t("madeWith")} · daftarapp.co</small></div></div>`;
 }
@@ -2193,7 +2215,7 @@ function printDoc(html){
 function invWaText(x){
   const c = invCalc(x), paid = invPaid(x);
   const lines = c.rows.map(l=>`• ${l.name} × ${fmt(num(l.qty))} = ${moneyTxt(l.netA+l.taxA)}`).join("\n");
-  const left = x.type!=="quote" && paid>0.005 ? t("waLeft",{p:moneyTxt(paid), r:moneyTxt(Math.max(0,c.total-paid))}) : "";
+  const left = !isDraft(x.type) && paid>0.005 ? t("waLeft",{p:moneyTxt(paid), r:moneyTxt(Math.max(0,c.total-paid))}) : "";
   return t("waInv",{type:t(INV_T[x.type]), n:x.no||"", co:COMPANY.name||"", d:x.date, lines, t:moneyTxt(c.total)+(c.tax?` (${t("taxTotal")} ${moneyTxt(c.tax)})`:""), paid:left, foot:(ST().invFoot||t("thanksInv"))+"\n"+t("madeWith")+" · daftarapp.co"});
 }
 
@@ -2346,11 +2368,15 @@ function itemForm(i){
       {name:"tax",label:t("lnTax"),type:"chips",options:taxOpts(i?.tax??taxRate()).map(r=>[String(r), r?r+"%":t("taxExempt")]),value:String(num(i?.tax??taxRate()))}],
     more:[{name:"service",label:t("isService"),type:"chips",options:[["0",t("kProduct")],["1",t("kService")]],value:i?.service?"1":"0"},
       {name:"openQty",label:t("openQty"),type:"money",value:i?.openQty||""},{name:"minQty",label:t("minQty"),type:"money",value:i?.minQty||""},
-      {name:"unit",label:t("itemUnit"),value:i?.unit||"",max:20,ph:t("itemUnitPh")},{name:"sku",label:t("itemSku"),value:i?.sku||"",max:40}],
+      {name:"unit",label:t("itemUnit"),value:i?.unit||"",max:20,ph:t("itemUnitPh")},{name:"sku",label:t("itemSku"),value:i?.sku||"",max:40},
+      {name:"openExp",label:t("openExp"),type:"date",value:i?.openExp||""}],
+    top: typeof barcodeField==="function" ? barcodeField(i) : "",
     del: i ? {label:t("del"), run:async()=>{ const ok = await remove("items", i.id); if(ok) setTimeout(itemsSheet, 30); return ok; }} : null,
     submit: async v=>{ if(!v.name){ toast(t("ePartyName")); return false; }
+      const bc = String(v.barcode||"").replace(/\s+/g,""); if(bc && S.items.some(o=>o.id!==i?.id && o.barcode===bc)){ toast(t("bcDup")); return false; }
       const ok = await save("items", i?.id, {...(i?strip(i):{createdAt:Date.now()}), name:v.name.slice(0,120), price:num(v.price), cost:num(v.cost), tax:num(v.tax), unit:(v.unit||"").slice(0,20), sku:(v.sku||"").slice(0,40),
-        service:v.service==="1", openQty:num(v.openQty), minQty:num(v.minQty), openDate:i?.openDate||today()}, true);
+        service:v.service==="1", openQty:num(v.openQty), minQty:num(v.minQty), openDate:i?.openDate||today(),
+        barcode:String(v.barcode||"").replace(/\s+/g,"").slice(0,48), openExp:validDate(v.openExp)?v.openExp:""}, true);
       if(ok && S.btab!=="stock") setTimeout(itemsSheet, 30); return ok; }});
 }
 
@@ -2386,7 +2412,7 @@ function viewReports(){
 function exportInvoices(){
   const rows = [[t("invNoS"),t("date"),LANG==="en"?"Type":"النوع",t("pName"),t("pTaxNo"),t("subTotal"),t("taxTotal"),t("grandTotal"),t("paidL"),t("remainingL"),LANG==="en"?"Status":"الحالة"]];
   S.invoices.filter(x=>!x.void).sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach(x=>{ const c = invCalc(x), p = partyById(x.partyId)||{}, pd = invPaid(x);
-    rows.push([x.no, x.date, t(INV_T[x.type]), p.name||"", p.taxNo||"", c.net, c.tax, c.total, x.type==="quote"?"":pd, x.type==="quote"?"":r2(c.total-pd), t({paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote"}[invState(x)])]); });
+    rows.push([x.no, x.date, t(INV_T[x.type]), p.name||"", p.taxNo||"", c.net, c.tax, c.total, isDraft(x.type)?"":pd, isDraft(x.type)?"":r2(c.total-pd), t({paid:"stPaid",partial:"stPartial",unpaid:"stUnpaid",overdue:"stOverdue",quote:"stQuote"}[invState(x)])]); });
   const csv = "﻿" + rows.map(r=>r.map(v=>{ const s = String(v??""); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s; }).join(",")).join("\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})); a.download = `daftar-invoices-${today()}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
 }
@@ -2416,6 +2442,7 @@ Object.assign(A, {
   editInv: id => { closeSheet(); invForm(invById(id)); },
   dupInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:x.type, partyId:x.partyId, lines:x.lines, incTax:x.incTax, notes:x.notes, unitId:x.unitId}); },
   retInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:x.type==="sale"?"saleReturn":"purchaseReturn", partyId:x.partyId, lines:x.lines, incTax:x.incTax, srcId:x.id, unitId:x.unitId}); },
+  poToInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:"purchase", partyId:x.partyId, lines:x.lines, incTax:x.incTax, notes:x.notes, srcId:x.id, unitId:x.unitId}); },
   quoteToInv: id => { const x = invById(id); if(!x) return; closeSheet(); invForm(null, {type:"sale", partyId:x.partyId, lines:x.lines, incTax:x.incTax, notes:x.notes, srcId:x.id, unitId:x.unitId}); },
   payInv: id => { const x = invById(id); if(!x) return; closeSheet(); voucherForm(null, {type:isSaleSide(x.type)?"receipt":"payment", partyId:x.partyId, invoiceId:x.id, amount:String(r2(invCalc(x).total-invPaid(x)))}); },
   printInv: id => { const x = invById(id); if(x){ closeSheet(); printDoc(invDocHtml(x)); } },
@@ -2474,7 +2501,7 @@ const MAIN_STORE = "main";
 const storeList = () => [{id:MAIN_STORE, name:t("storeMain")}, ...S.stores.filter(s=>!s.archived && s.id!==MAIN_STORE).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0))];
 const storeName = id => (storeList().find(s=>s.id===id) || {name:t("storeMain")}).name;
 const itemByName = n => { const k = String(n||"").trim().toLowerCase(); return k ? S.items.find(i=>String(i.name).trim().toLowerCase()===k) : null; };
-const itemOf = l => (l.itemId && S.items.find(i=>i.id===l.itemId)) || itemByName(l.name);
+const itemOf = l => l.nostock ? null : (l.itemId && S.items.find(i=>i.id===l.itemId)) || itemByName(l.name);   // nostock: moved-in history lines, already counted in opening quantities
 const stocked = i => i && !i.service;
 const invStockSign = tp => tp==="sale" ? -1 : tp==="saleReturn" ? 1 : tp==="purchase" ? 1 : tp==="purchaseReturn" ? -1 : 0;
 /* every stock movement, from invoices, manual moves and opening quantities */
@@ -2900,11 +2927,11 @@ function posOpen(){
   posRender();
 }
 function posRender(){
-  const q = (POS.q||"").toLowerCase(), items = S.items.filter(i=>num(i.price)>0 && (!q || String(i.name).toLowerCase().includes(q) || String(i.sku||"").toLowerCase()===q)).sort((a,b)=>String(a.name).localeCompare(String(b.name))).slice(0,60);
+  const q = (POS.q||"").toLowerCase(), items = S.items.filter(i=>num(i.price)>0 && (!q || String(i.name).toLowerCase().includes(q) || String(i.sku||"").toLowerCase()===q || String(i.barcode||"")===q)).sort((a,b)=>String(a.name).localeCompare(String(b.name))).slice(0,60);
   const c = invCalc({lines:POS.lines, incTax:ST().incTax});
   const custs = partyOptions("sale", POS.partyId).filter(([id])=>!(partyById(id)||{}).walkIn);
   openSheet({title:t("pos"), noSave:true, html:`
-    <input type="search" id="posq" class="whoq" placeholder="${esc(t("posSearch"))}" value="${esc(POS.q||"")}" autocomplete="off">
+    <div class="inlinepick"><input type="search" id="posq" class="whoq" placeholder="${esc(t("posSearch"))}" value="${esc(POS.q||"")}" autocomplete="off"><button type="button" class="btn sm" data-act="bcCam" data-id="pos" aria-label="${esc(t("bcScan"))}">${icon("scan")}</button></div>
     <div class="posgrid">${items.map(i=>{ const n = stocked(i) ? qtyOf(i.id) : null; return `<button type="button" class="postile" data-act="posAdd" data-id="${esc(i.id)}"><b>${esc(i.name)}</b><span>${money(num(i.price))}</span>${n!==null?`<small class="${n<=0?"negv":""}">${t("onHand")}: ${fmt(n)}${i.unit?" "+esc(i.unit):""}</small>`:""}</button>`; }).join("")}</div>
     <span class="label">${t("posCart")}</span>
     <div class="list">${POS.lines.length ? POS.lines.map((l,i)=>`<div class="row static"><div class="m"><b>${esc(l.name)}</b><span class="sub">${money(num(l.price))}</span></div>
@@ -2918,7 +2945,7 @@ function posRender(){
 async function posPay(method, el){
   if(!POS || !POS.lines.length) return; if(el) el.disabled = true;
   const pid = POS.partyId || await ensureWalkIn(); if(!pid){ if(el) el.disabled = false; return; }
-  const data = {type:"sale", no:nextNo("invoices","S"), partyId:pid, date:today(), dueDate:today(), lines:POS.lines.map(l=>({name:l.name, itemId:l.itemId, qty:l.qty, price:l.price, tax:l.tax, disc:0})), incTax:ST().incTax, discount:0, notes:"", pos:true, createdAt:Date.now()};
+  const data = {type:"sale", no:nextNo("invoices","S"), partyId:pid, date:today(), dueDate:today(), lines:POS.lines.map(l=>({name:l.name, itemId:l.itemId, qty:l.qty, price:l.price, tax:l.tax, disc:0})), incTax:ST().incTax, ...(typeof loyRedeemFor==="function" ? loyRedeemFor(POS) : {discount:0}), notes:"", pos:true, given:num((document.getElementById("posGiven")||{}).value), createdAt:Date.now()};
   data.total = invCalc(data).total; const id = newId();
   if(!await save("invoices", id, data, true)){ if(el) el.disabled = false; return; }
   await saveVoucher({type:"receipt", partyId:pid, amount:data.total, date:data.date, invoiceId:id, method}, true);
@@ -2926,15 +2953,8 @@ async function posPay(method, el){
   openSheet({title:t("posDone",{n:data.no}), noSave:true, html:`<div class="owe">${MARK}<span class="label">${t("grandTotal")}</span><b>${money(data.total)}</b></div>
     <div class="grid2"><button type="button" class="btn" data-act="posPrint" data-id="${esc(id)}">${icon("file")}${t("posReceipt")}</button><button type="button" class="btn primary" data-act="pos">${icon("plus")}${t("posNew")}</button></div>`});
 }
-function receiptHtml(x){
-  const c = invCalc(x);
-  return `<div class="doc rcpt"><h1>${esc(COMPANY.name||"")}</h1>${ST().taxNo?`<div>${t("taxNoL")}: ${esc(ST().taxNo)}</div>`:""}<div>${esc(x.no)} · ${esc(x.date)}</div><hr>
-    ${c.rows.map(l=>`<div class="rl"><span>${esc(l.name)} × ${fmt(num(l.qty))}</span><span>${fmt(l.netA+l.taxA)}</span></div>`).join("")}<hr>
-    <div class="rl"><span>${t("taxTotal")}</span><span>${fmt(c.tax)}</span></div><div class="rl g"><span>${t("grandTotal")}</span><span>${moneyTxt(c.total)}</span></div><hr><div>${esc(ST().invFoot||t("thanksInv"))}</div><small>daftarapp.co</small></div>`;
-}
-
 /* ----- roles: what each person may change (the database enforces the same rules) ----- */
-const CASHIER_COLS = ["invoices","vouchers","parties","items","cheques"];
+const CASHIER_COLS = ["invoices","vouchers","parties","items","cheques","appointments"];
 const canWrite = col => !ROLE || ROLE==="owner" || ROLE==="member" || ROLE==="manager" || ROLE==="accountant" || (ROLE==="cashier" && CASHIER_COLS.includes(col));
 const canDelete = col => !ROLE || ["owner","member","manager","accountant"].includes(ROLE);
 const ROLE_L = {owner:"roleOwner", member:"roleMemberL", manager:"roleManager", accountant:"roleAccountant", cashier:"roleCashier", viewer:"roleViewer"};
@@ -3051,6 +3071,7 @@ function radarEvents(H, J){
     if(x.type!=="sale" && x.type!=="purchase") return;
     const left = r2(invCalc(x).total - invPaid(x)); if(left<=0.005) return;
     const due = x.dueDate || x.date || t0;
+    if(x.type==="sale" && x.inst && typeof instRows==="function"){ instRows(x).filter(r=>r.left>0.005).forEach(r=>{ const late = r.date<t0; push(late ? addDays(t0,7) : r.date, r.left, "inv", t(late?"evInstLate":"evInst",{k:r.k,n:x.no||"",x:pn(x.partyId)}), false, "viewInv", x.id); }); return; }
     if(x.type==="sale"){ const late = due<t0; push(late ? addDays(t0,7) : due, left, "inv", t(late?"evInvLate":"evInv",{n:x.no||"",x:pn(x.partyId)}), false, "viewInv", x.id); }
     else push(due, -left, "bill", t("evBill",{n:x.supNo||x.no||"",x:pn(x.partyId)}), true, "viewInv", x.id);
   });
@@ -3078,7 +3099,7 @@ function radarEvents(H, J){
     Object.keys(taxM).forEach(m=>{ const due = monthEnd(addMonths(m+"-01",1)); if(due>=t0) push(due, -taxM[m], "tax", t("evTax",{m:mName(m+"-01")}), true); });
   }
   // sales tax: 2-month periods (Jan–Feb, Mar–Apr…), paid within 30 days after the period ends
-  const taxed = liveInv().filter(x=>x.type!=="quote");
+  const taxed = liveInv();
   if(taxed.some(x=>invCalc(x).tax>0)){
     const y = Number(t0.slice(0,4)), m0 = parseD(t0).getMonth();
     const startCur = iso(new Date(y, m0 - (m0%2), 1));
@@ -3308,4 +3329,1021 @@ Object.assign(A, {
   pushLater: () => { lsSet("pushAsked", 1); render(); },
   pushStop: async () => { await pushDisable(); toast(t("pushStopped")); closeSheet(); pushSheet(); },
   pushTest: async () => { try{ const { error } = await sb.functions.invoke("push", {body:{mode:"test"}}); toast(error ? t("pushFail") : t("pushSent")); }catch(e){ toast(t("pushFail")); } },
+});
+/* =====================================================================
+   Shop & growth tools:
+   1. Barcodes: USB/Bluetooth scanners, phone camera, printable labels
+   2. Receipts sized for 80 mm / 58 mm thermal printers
+   3. Import items, customers, suppliers and staff from Excel or CSV
+   4. Installments on sale invoices
+   5. Expiry dates (pharmacies, food) with early warnings
+   6. Monthly recurring expenses, income and invoices
+   ===================================================================== */
+Object.assign(L, {
+  // barcode
+  bcLabel:["الباركود","Barcode"], bcScan:["امسح بالكاميرا","Scan with camera"], bcHint:["امسح الباركود بالقارئ أو الكاميرا، أو اكتبه.","Scan with a reader or the camera, or type it."],
+  bcDup:["هاد الباركود مستخدم لصنف ثاني","This barcode is already used by another item"], bcUnknown:["باركود مش معروف: {x}","Unknown barcode: {x}"], bcAddNew:["ضيفه صنف جديد","Add as a new item"],
+  bcFound:["{x} · انضاف","{x} · added"], bcCamErr:["ما قدرنا نفتح الكاميرا. اسمح لدفتر يستخدمها من إعدادات المتصفح.","Couldn't open the camera. Allow camera access in your browser settings."],
+  bcAim:["وجّه الكاميرا على الباركود","Point the camera at the barcode"], bcGen:["اعمل باركود","Generate"],
+  labels:["طباعة ملصقات باركود","Print barcode labels"], labelsSub:["اختار الأصناف وعدد الملصقات لكل واحد.","Pick items and how many labels for each."], labelSize:["حجم الملصق","Label size"],
+  lbl4025:["40×25 مم (طابعة ملصقات)","40×25 mm (label printer)"], lbl5030:["50×30 مم (طابعة ملصقات)","50×30 mm (label printer)"], lblA4:["ورق A4 (24 ملصق)","A4 sheet (24 labels)"],
+  lblGo:["اطبع الملصقات","Print labels"], lblNone:["اختار صنف واحد على الأقل","Pick at least one item"], lblPrice:["اطبع السعر","Show price"], lblNoCode:["{n} أصناف ما إلها باركود، رح نعملها باركود داخلي.","{n} items have no barcode; we'll give them an in-store code."],
+  // receipt
+  setPaper:["ورق الطباعة","Printing paper"], paperA4:["A4 عادي","A4"], paper80:["وصل حراري 80 مم","Thermal 80 mm"], paper58:["وصل حراري 58 مم","Thermal 58 mm"],
+  paperHint:["إذا عندك طابعة وصولات، اختار عرضها وبتطلع الفواتير والوصولات على مقاسها.","If you have a receipt printer, pick its width and invoices print to fit."],
+  rcCashier:["الكاشير","Cashier"], rcGiven:["المدفوع","Paid"], rcItems:["{n} صنف","{n} items"],
+  // import
+  imp:["استيراد من Excel","Import from Excel"], impSub:["جاي من برنامج ثاني؟ نزّل الأصناف أو الزباين أو الموظفين من ملف Excel أو CSV بدقيقة.","Coming from another program? Bring in items, customers or staff from an Excel or CSV file in a minute."],
+  impWhat:["شو بدك تستورد؟","What are you importing?"], impItems:["أصناف","Items"], impCust:["زباين","Customers"], impSupp:["موردين","Suppliers"], impStaff:["موظفين","Staff"],
+  impTpl:["نزّل نموذج جاهز","Download a template"], impPick:["اختار الملف (xlsx أو csv)","Choose the file (xlsx or csv)"], impRead:["عم نقرأ الملف…","Reading the file…"],
+  impBad:["ما قدرنا نقرأ هالملف. احفظه من Excel كـ xlsx أو CSV وجرّب.","We couldn't read this file. Save it from Excel as xlsx or CSV and try again."],
+  impNoName:["ما لقينا عمود الاسم. خلّي أول سطر فيه عناوين، وواحد منها «الاسم».","No name column found. Put headings in the first row, one of them \"Name\"."],
+  impPrev:["لقينا {n} سطر جديد · {d} مكرر رح نتجاهله","Found {n} new rows · {d} duplicates will be skipped"], impGo:["استورد {n}","Import {n}"], impDone:["تمّ استيراد {n}","Imported {n}"],
+  impCols:["الأعمدة اللي فهمناها: {x}","Columns we understood: {x}"], impMax:["الحد {n} سطر بالمرة الوحدة","Up to {n} rows at a time"], impNone:["ما في أسطر جديدة","No new rows"],
+  // installments
+  instOpt:["أقساط","Installments"], instN:["عدد الأقساط (شهري)","Number of monthly installments"], instFirst:["أول قسط بتاريخ","First installment on"], instDown:["الدفعة الأولى","Down payment"],
+  instT:["الأقساط","Installments"], instK:["القسط {k}","Installment {k}"], instNext:["القسط الجاي: {x} بتاريخ {d}","Next installment: {x} on {d}"], instAllPaid:["خلصت كل الأقساط","All installments paid"],
+  instLateN:["{n} قسط متأخر","{n} late"], instRemind:["ذكّر الزبون واتساب","Remind on WhatsApp"], instPay:["سجّل دفعة قسط","Record an installment"],
+  instWa:["مرحبا {p}،\nتذكير بقسط رقم {k} من فاتورة {n} بقيمة {x}، مستحق بتاريخ {d}.\nالمتبقي من الفاتورة: {r}.\nشكراً لك، {co}","Hello {p},\nA reminder that installment {k} of invoice {n}, {x}, is due on {d}.\nRemaining on the invoice: {r}.\nThank you, {co}"],
+  aInstDue:["أقساط مستحقة هالأسبوع: {n} · {x}","Installments due this week: {n} · {x}"], evInst:["قسط {k} · {n} · {x}","Installment {k} · {n} · {x}"], evInstLate:["قسط متأخر {k} · {n} · {x}","Late installment {k} · {n} · {x}"],
+  stLate:["متأخر","Late"], stUp:["جاي","Upcoming"],
+  // expiry
+  lnExp:["تاريخ الانتهاء (اختياري)","Expiry date (optional)"], openExp:["تاريخ انتهاء الكمية الافتتاحية","Expiry of the opening quantity"],
+  expT:["قرب ينتهي","Expiring soon"], expGone:["منتهي","Expired"], expIn:["بعد {n} يوم","in {n} days"], aExp:["أصناف منتهية أو قربت تنتهي: {n}","Items expired or expiring soon: {n}"],
+  expNone:["ما في أصناف قربت تنتهي خلال 60 يوم.","Nothing expires in the next 60 days."],
+  // recurring
+  recT:["المتكرر كل شهر","Monthly recurring"], recMake:["كرّرها كل شهر","Repeat every month"], recOn:["متكررة كل شهر","Repeats monthly"], recStop:["وقّف التكرار","Stop repeating"],
+  recDay:["يوم الشهر","Day of the month"], recSaved:["تمام، رح تنسجل لحالها يوم {d} من كل شهر","Done, it will be recorded on day {d} of every month"], recStopped:["وقف التكرار","Stopped"],
+  recNone:["ما في اشي متكرر. افتح أي مصروف (مثل الإيجار أو الإنترنت) أو فاتورة، واضغط «كرّرها كل شهر».","Nothing recurring yet. Open any expense (rent, internet…) or invoice and tap \"Repeat every month\"."],
+  recRan:["انسجل لحاله: {n} من المتكرر الشهري","Recorded automatically: {n} monthly items"], recNext:["الجاي: {d}","Next: {d}"], recKExp:["مصروف","Expense"], recKInc:["دخل","Income"], recKInv:["فاتورة","Invoice"],
+  recNeedDb:["ميزة التكرار بدها تحديث بسيط بقاعدة البيانات. احكي مع الدعم.","Recurring needs a small database update. Contact support."],
+});
+ICON.scan = '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 9v6M10 9v6M13 9v6M16 9v6"/>';
+ICON.upload = '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 1 1 1h14a1 1 0 0 1 1-1v-3"/>';
+ICON.repeat = '<path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/>';
+if(!COLS.includes("recurring")){ COLS.push("recurring"); S.recurring = S.recurring || []; }
+
+/* small shared helpers */
+const sheetOpen = () => !document.getElementById("sheet").hidden;
+const sheetTitle = () => document.getElementById("sheetTitle").textContent;
+/* same day next month(s), clamped to the month's length: 31 Jan + 1 → 28/29 Feb */
+function addMonthsKeep(d, n){ const x = parseD(d), y = x.getFullYear(), m = x.getMonth()+n, last = new Date(y, m+1, 0).getDate(); return iso(new Date(y, m, Math.min(x.getDate(), last))); }
+
+/* =====================================================================
+   1. BARCODES
+   ===================================================================== */
+const normBc = c => String(c||"").replace(/[\s‎‏]/g,"").slice(0,48);
+const itemByCode = code => { const k = normBc(code); if(!k) return null; return S.items.find(i=>i.barcode===k) || S.items.find(i=>i.sku && normBc(i.sku)===k) || null; };
+
+/* the barcode field on the item form: input + camera button */
+function barcodeField(i){
+  return `<div class="field"><label for="f_barcode">${t("bcLabel")}</label><div class="inlinepick"><input id="f_barcode" name="barcode" inputmode="text" autocomplete="off" maxlength="48" value="${esc(i?.barcode||"")}" placeholder="${esc(t("bcHint"))}" class="ltr">
+    <button type="button" class="btn sm" data-act="bcCam" data-id="field" aria-label="${esc(t("bcScan"))}">${icon("scan")}</button>${i?.barcode?"":`<button type="button" class="btn sm" data-act="bcGen">${t("bcGen")}</button>`}</div></div>`;
+}
+/* an in-store code: 2 + 11 digits + EAN check digit (the "2" range is reserved for in-store use) */
+function genCode(){
+  for(;;){ const d = "2" + String(Math.floor(Math.random()*1e11)).padStart(11,"0");
+    const sm = d.split("").reduce((a,c,i)=>a + Number(c)*(i%2?3:1), 0), code = d + ((10 - sm%10)%10);
+    if(!S.items.some(i=>i.barcode===code)) return code; }
+}
+
+/* what a scanned code means depends on the screen that's open */
+function bcHandle(raw){
+  const code = normBc(raw); if(code.length<3) return;
+  const fld = document.getElementById("f_barcode");
+  if(fld && sheetOpen()){ fld.value = code; fld.dispatchEvent(new Event("input",{bubbles:true})); beep(); return; }
+  const it = itemByCode(code);
+  if(POS && sheetOpen() && sheetTitle()===t("pos")){
+    if(it && num(it.price)>0){ A.posAdd(it.id); beep(); toast(t("bcFound",{x:it.name})); } else bcUnknown(code);
+    return; }
+  if(INV && sheetOpen() && document.getElementById("invLines")){
+    if(!it){ bcUnknown(code); return; }
+    const box = document.getElementById("invLines"), ls = readLines().filter(l=>l.name);
+    const hit = ls.find(l=>l.name===it.name);
+    if(hit) hit.qty = num(hit.qty)+1;
+    else ls.push({name:it.name, qty:1, price: isSaleSide(INV.type) ? num(it.price) : (num(it.cost)||num(it.price)), tax:num(it.tax ?? taxRate())});
+    box.innerHTML = ls.map(lineRow).join(""); invTotals(); beep(); toast(t("bcFound",{x:it.name})); return; }
+  if(sheetOpen()) return;   // some other form: don't jump away from it
+  if(it){ beep(); if(typeof itemSheet==="function") itemSheet(it.id); return; }
+  bcUnknown(code);
+}
+function bcUnknown(code){
+  toast(t("bcUnknown",{x:code}));
+  const box = document.getElementById("toast"); if(!box || !canWrite("items")) return;
+  box.innerHTML = `${esc(t("bcUnknown",{x:code}))} <button type="button" class="linkbtn" data-act="bcNew" data-id="${esc(code)}">${t("bcAddNew")}</button>`;
+}
+/* a short beep + buzz so the cashier knows the scan landed */
+function beep(){
+  try{ navigator.vibrate && navigator.vibrate(30); }catch(e){}
+  try{ const C = window.AudioContext || window.webkitAudioContext; if(!C) return; const ac = beep.ac || (beep.ac = new C()), o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = 1450; g.gain.value = .06; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + .07); }catch(e){}
+}
+
+/* keyboard-wedge scanners (USB / Bluetooth) type the code very fast and press Enter */
+const WEDGE = {buf:"", last:0};
+document.addEventListener("keydown", e=>{
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = e.target, typing = el && (el.tagName==="INPUT" || el.tagName==="TEXTAREA" || el.tagName==="SELECT" || el.isContentEditable);
+  // inside the POS search box or the barcode field, Enter means "this is a code"
+  if(e.key==="Enter" && el && (el.id==="posq" || el.id==="f_barcode")){
+    e.preventDefault(); const v = el.value.trim(); if(!v) return;
+    if(el.id==="posq"){ const it = itemByCode(v); if(it){ el.value = ""; POS.q = ""; bcHandle(v); } else if(POS){ const m = S.items.filter(i=>num(i.price)>0 && String(i.name).toLowerCase().includes(v.toLowerCase())); if(m.length===1){ el.value=""; POS.q=""; A.posAdd(m[0].id); } else bcUnknown(v); } }
+    else beep();
+    return; }
+  if(typing) return;
+  const now = performance.now();
+  if(e.key==="Enter"){ const b = WEDGE.buf; WEDGE.buf = ""; if(b.length>=4 && now-WEDGE.last<120){ e.preventDefault(); bcHandle(b); } return; }
+  if(e.key.length!==1){ return; }
+  if(now-WEDGE.last>120) WEDGE.buf = "";
+  WEDGE.buf += e.key; WEDGE.last = now;
+}, true);
+
+/* ----- camera scanning: the browser's own detector when it has one, otherwise a bundled reader ----- */
+const BC_FORMATS = ["ean_13","ean_8","upc_a","upc_e","code_128","code_39","code_93","itf","codabar","qr_code","data_matrix"];
+let bcLib = null;
+function loadScript(src){ return new Promise((ok, no)=>{ const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
+async function bcDetector(){
+  if("BarcodeDetector" in window){ try{ const f = await window.BarcodeDetector.getSupportedFormats(); const use = BC_FORMATS.filter(x=>f.includes(x)); if(use.includes("ean_13") && use.includes("code_128")) return new window.BarcodeDetector({formats:use}); }catch(e){} }
+  if(!bcLib){ await loadScript("vendor/barcode.js"); bcLib = window.BarcodeDetectionAPI;
+    bcLib.prepareZXingModule({overrides:{locateFile:(p, pre)=> p.endsWith(".wasm") ? new URL("vendor/zxing_reader.wasm", location.href).href : pre + p}}); }
+  return new bcLib.BarcodeDetector({formats:BC_FORMATS});
+}
+const CAM = {stream:null, timer:null, busy:false};
+async function bcCamera(onCode){
+  let det;
+  try{ det = await bcDetector(); }catch(e){ toast(t("eGeneric")); return; }
+  let stream;
+  try{ stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}, width:{ideal:1280}}, audio:false}); }
+  catch(e){ toast(t("bcCamErr")); return; }
+  bcCamClose();
+  CAM.stream = stream;
+  const ov = document.createElement("div"); ov.id = "camOv"; ov.className = "cam-ov"; ov.setAttribute("role","dialog"); ov.setAttribute("aria-label", t("bcScan"));
+  ov.innerHTML = `<video playsinline muted autoplay></video><div class="cam-frame"></div><p class="cam-tip">${esc(t("bcAim"))}</p><button type="button" class="btn cam-x" data-act="bcCamClose">${icon("x")}${t("cancel")}</button>`;
+  document.body.appendChild(ov);
+  const v = ov.querySelector("video"); v.srcObject = stream; try{ await v.play(); }catch(e){}
+  CAM.timer = setInterval(async ()=>{
+    if(CAM.busy || v.readyState<2) return; CAM.busy = true;
+    try{ const r = await det.detect(v); const hit = r && r.find(x=>x.rawValue);
+      if(hit){ bcCamClose(); onCode(hit.rawValue); } }catch(e){} finally{ CAM.busy = false; }
+  }, 220);
+}
+function bcCamClose(){
+  clearInterval(CAM.timer); CAM.timer = null;
+  if(CAM.stream){ CAM.stream.getTracks().forEach(tr=>tr.stop()); CAM.stream = null; }
+  const ov = document.getElementById("camOv"); if(ov) ov.remove();
+}
+
+/* ----- Code 128 (set B) as SVG: every scanner reads it, no fonts or libraries needed ----- */
+const C128 = "212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112".split(" ");
+function code128Svg(text, h){
+  const s = String(text).replace(/[^\x20-\x7e]/g,"");
+  const vals = [104, ...[...s].map(c=>c.charCodeAt(0)-32)];
+  const chk = vals.reduce((a,v,i)=>a + v*(i||1), 0) % 103;
+  const pat = [...vals, chk].map(v=>C128[v]).join("") + C128[106];
+  let x = 10, bars = "";
+  [...pat].forEach((w,i)=>{ const n = Number(w); if(i%2===0) bars += `<rect x="${x}" y="0" width="${n}" height="${h}"/>`; x += n; });
+  return `<svg class="bc" viewBox="0 0 ${x+10} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(s)}"><rect width="100%" height="100%" fill="#fff"/><g fill="#000">${bars}</g></svg>`;
+}
+
+/* ----- labels ----- */
+function labelsSheet(pre){
+  const items = S.items.filter(i=>!i.archived).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  if(!items.length){ toast(t("noItems")); return; }
+  const picked = new Set(pre ? [pre] : []);
+  openSheet({title:t("labels"), saveLabel:t("lblGo"),
+    html:`<p class="sub">${t("labelsSub")}</p>
+      <div class="field"><span class="flabel">${t("labelSize")}</span><div class="chips">${[["4025",t("lbl4025")],["5030",t("lbl5030")],["a4",t("lblA4")]].map(([v,l],i)=>`<label><input type="radio" name="lsize" value="${v}" ${(lsGet("lblSize","4025")===v)?"checked":""}><span>${l}</span></label>`).join("")}</div></div>
+      <label class="check"><input type="checkbox" name="lprice" value="1" ${lsGet("lblPrice",1)?"checked":""}><span><b>${t("lblPrice")}</b></span></label>
+      <div class="list lbl-pick">${items.map(i=>`<label class="row static lbl-row"><input type="checkbox" name="lpick" value="${esc(i.id)}" ${picked.has(i.id)?"checked":""}><div class="m"><b>${esc(i.name)}</b><span class="sub ltr">${esc(i.barcode||"—")}</span></div><input class="lbl-n" data-n="${esc(i.id)}" inputmode="numeric" value="1" aria-label="#"></label>`).join("")}</div>`,
+    submit: async v=>{
+      const ids = v.lpick || []; if(!ids.length){ toast(t("lblNone")); return false; }
+      lsSet("lblSize", v.lsize||"4025"); lsSet("lblPrice", (v.lprice||[]).length?1:0);
+      const counts = {}; document.querySelectorAll("#sheetBody .lbl-n").forEach(el=>counts[el.dataset.n] = Math.max(0, Math.min(500, parseInt(toEn(el.value))||0)));
+      // give items without a code an in-store one, so the label can be scanned back
+      for(const id of ids){ const it = S.items.find(i=>i.id===id); if(it && !it.barcode){ const code = genCode(); await save("items", it.id, {...strip(it), barcode:code}, true); } }
+      const list = []; ids.forEach(id=>{ const it = S.items.find(i=>i.id===id); for(let k=0; k<(counts[id]??1); k++) if(it) list.push(it); });
+      if(!list.length){ toast(t("lblNone")); return false; }
+      printLabels(list, v.lsize||"4025", (v.lprice||[]).length>0); return true;
+    }});
+}
+function printLabels(list, size, withPrice){
+  const one = it => `<div class="lbl"><b>${esc(String(it.name).slice(0,34))}</b>${code128Svg(it.barcode, 60)}<span class="ltr">${esc(it.barcode)}</span>${withPrice&&num(it.price)?`<i>${esc(moneyTxt(num(it.price)))}</i>`:""}</div>`;
+  const page = size==="a4" ? "A4" : size==="5030" ? "50mm 30mm" : "40mm 25mm";
+  printDoc(`<style>@page{size:${page};margin:${size==="a4"?"8mm":"0"}}</style><div class="labels sz-${size}">${list.map(one).join("")}</div>`);
+}
+
+/* =====================================================================
+   2. THERMAL RECEIPTS
+   ===================================================================== */
+function receiptHtml(x){
+  const c = invCalc(x), p = partyById(x.partyId), s = ST(), paid = invPaid(x), vs = liveVouch().filter(v=>v.invoiceId===x.id);
+  return `<div class="doc rcpt w${s.paper==="58"?"58":"80"}">
+    <h1>${esc(COMPANY.name||"")}</h1>${s.address?`<div>${esc(s.address)}</div>`:""}${COMPANY.phone?`<div class="ltr">${esc(COMPANY.phone)}</div>`:""}${s.taxNo?`<div>${t("taxNoL")}: <span class="ltr">${esc(s.taxNo)}</span></div>`:""}
+    <hr><div class="rl"><span>${esc(t(INV_T[x.type]))}</span><span class="ltr">${esc(x.no||"")}</span></div><div class="rl"><span>${t("date")}</span><span class="ltr">${esc(x.date)}${x.createdAt?" "+new Date(x.createdAt).toTimeString().slice(0,5):""}</span></div>
+    ${p && !p.walkIn ? `<div class="rl"><span>${t("posCustomer")}</span><span>${esc(p.name)}</span></div>`:""}<hr>
+    ${c.rows.map(l=>`<div class="ri"><b>${esc(l.name)}</b><div class="rl"><span class="ltr">${fmt(num(l.qty))} × ${fmt(num(l.price))}</span><span>${fmt(l.netA+l.taxA)}</span></div></div>`).join("")}<hr>
+    <div class="rl"><span>${t("rcItems",{n:c.rows.length})}</span><span></span></div>
+    ${c.discount?`<div class="rl"><span>${t("discountL")}</span><span>− ${fmt(c.discount)}</span></div>`:""}
+    <div class="rl"><span>${t("taxTotal")}</span><span>${fmt(c.tax)}</span></div><div class="rl g"><span>${t("grandTotal")}</span><span>${esc(moneyTxt(c.total))}</span></div>
+    ${paid>0.005?`<div class="rl"><span>${t("rcGiven")}${vs[0]?" · "+esc(t(vs[0].method||"cash")):""}</span><span>${fmt(paid)}</span></div>`:""}
+    ${x.given && num(x.given)>c.total?`<div class="rl"><span>${t("posChange")}</span><span>${fmt(num(x.given)-c.total)}</span></div>`:""}
+    <hr><div>${esc(s.invFoot||t("thanksInv"))}</div><small>daftarapp.co</small></div>`;
+}
+/* the page size has to be set on the whole document while printing */
+function printSized(html){
+  const s = ST(); if(s.paper==="a4") return printDoc(html);
+  printDoc(`<style>@page{size:${s.paper}mm auto;margin:2mm}</style>` + html);
+}
+Object.assign(A, {
+  posPrint: id => { const x = invById(id); if(x){ closeSheet(); printSized(receiptHtml(x)); } },
+  printInv: id => { const x = invById(id); if(!x) return; closeSheet(); if(ST().paper!=="a4" && !isDraft(x.type)) printSized(receiptHtml(x)); else printDoc(invDocHtml(x)); },
+});
+
+/* =====================================================================
+   3. IMPORT FROM EXCEL / CSV
+   ===================================================================== */
+/* A tiny .xlsx reader: an xlsx file is a zip of XML files. We read the zip's
+   directory, inflate with the browser's own DecompressionStream, and read the
+   first sheet's cells. No third-party parser, so nothing to keep patched. */
+async function unzipEntries(buf){
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let e = -1; for(let i = buf.byteLength-22; i>=Math.max(0, buf.byteLength-66000); i--) if(dv.getUint32(i, true)===0x06054b50){ e = i; break; }
+  if(e<0) throw new Error("zip");
+  const n = dv.getUint16(e+10, true); let p = dv.getUint32(e+16, true); const out = {};
+  const td = new TextDecoder();
+  for(let k=0; k<n; k++){
+    if(dv.getUint32(p, true)!==0x02014b50) throw new Error("zip");
+    const method = dv.getUint16(p+10, true), csize = dv.getUint32(p+20, true), nl = dv.getUint16(p+28, true), xl = dv.getUint16(p+30, true), cl = dv.getUint16(p+32, true), lo = dv.getUint32(p+42, true);
+    const name = td.decode(u8.subarray(p+46, p+46+nl));
+    out[name] = {method, csize, lo}; p += 46+nl+xl+cl;
+  }
+  const read = async name => {
+    const f = out[name]; if(!f) return null;
+    const lnl = dv.getUint16(f.lo+26, true), lxl = dv.getUint16(f.lo+28, true), start = f.lo+30+lnl+lxl, data = u8.subarray(start, start+f.csize);
+    if(f.method===0) return td.decode(data);
+    if(f.method!==8 || typeof DecompressionStream==="undefined") throw new Error("zip");
+    const ds = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return await new Response(ds).text();
+  };
+  return {names:Object.keys(out), read};
+}
+async function readXlsx(buf){
+  const z = await unzipEntries(buf), xml = s => new DOMParser().parseFromString(s, "application/xml");
+  const wb = xml(await z.read("xl/workbook.xml") || ""), rels = xml(await z.read("xl/_rels/workbook.xml.rels") || "");
+  const sh = wb.getElementsByTagName("sheet")[0]; if(!sh) throw new Error("sheet");
+  const rid = sh.getAttribute("r:id") || sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id");
+  let target = "worksheets/sheet1.xml";
+  [...rels.getElementsByTagName("Relationship")].forEach(r=>{ if(r.getAttribute("Id")===rid) target = r.getAttribute("Target"); });
+  const path = target.startsWith("/") ? target.slice(1) : "xl/" + target.replace(/^\.\//,"");
+  const ssx = await z.read("xl/sharedStrings.xml"), shared = ssx ? [...xml(ssx).getElementsByTagName("si")].map(si=>[...si.getElementsByTagName("t")].map(x=>x.textContent).join("")) : [];
+  const doc = xml(await z.read(path) || ""), rows = [];
+  const colIx = ref => { const m = /^([A-Z]+)/.exec(ref||""); if(!m) return -1; return [...m[1]].reduce((a,c)=>a*26 + c.charCodeAt(0)-64, 0) - 1; };
+  [...doc.getElementsByTagName("row")].forEach(r=>{
+    const row = []; let auto = 0;
+    [...r.getElementsByTagName("c")].forEach(c=>{
+      const ix = c.hasAttribute("r") ? colIx(c.getAttribute("r")) : auto; auto = ix+1;
+      const tp = c.getAttribute("t"), v = c.getElementsByTagName("v")[0], is = c.getElementsByTagName("is")[0];
+      let val = tp==="s" ? (shared[Number(v && v.textContent)] ?? "") : tp==="inlineStr" ? (is ? [...is.getElementsByTagName("t")].map(x=>x.textContent).join("") : "") : (v ? v.textContent : "");
+      if(ix>=0 && ix<200) row[ix] = String(val).trim();
+    });
+    if(row.some(x=>x)) rows.push([...row].map(x=>x??""));
+  });
+  return rows;
+}
+/* CSV with quotes; the separator is whichever of , ; tab appears most in the first line */
+function readCsv(text){
+  text = text.replace(/^﻿/,"");
+  const first = text.split(/\r?\n/)[0] || "", sep = [",",";","\t"].sort((a,b)=>first.split(b).length-first.split(a).length)[0];
+  const rows = []; let row = [], cell = "", q = false;
+  for(let i=0;i<text.length;i++){ const ch = text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){ cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+    if(ch==='"') q = true; else if(ch===sep){ row.push(cell.trim()); cell = ""; } else if(ch==="\n"||ch==="\r"){ if(ch==="\r"&&text[i+1]==="\n") i++; row.push(cell.trim()); cell = ""; if(row.some(x=>x)) rows.push(row); row = []; } else cell += ch; }
+  row.push(cell.trim()); if(row.some(x=>x)) rows.push(row);
+  return rows;
+}
+/* each field and the headings people write for it (Arabic, English, and what other programs export) */
+const IMP = {
+  items:{col:"items", f:{name:["الاسم","اسم الصنف","الصنف","المنتج","اسم المنتج","name","item","product","item name"], price:["سعر البيع","السعر","price","sale price","selling price"],
+    cost:["التكلفة","سعر الشراء","الكلفة","cost","purchase price","buy price"], barcode:["الباركود","باركود","barcode","ean","upc"], sku:["الكود","رمز الصنف","sku","code","item code"],
+    unit:["الوحدة","unit","uom"], openQty:["الكمية","الكمية الافتتاحية","الرصيد","qty","quantity","stock","on hand"], minQty:["حد التنبيه","حد الطلب","min","reorder"], tax:["الضريبة","نسبة الضريبة","tax","vat","tax %"]},
+    tpl:[["الاسم","سعر البيع","التكلفة","الباركود","الوحدة","الكمية","الضريبة"],["سكر 1 كيلو","1.2","0.95","6251234567890","كيس","40","16"]]},
+  customers:{col:"parties", f:{name:["الاسم","اسم الزبون","الزبون","العميل","اسم العميل","name","customer","client"], phone:["الهاتف","التلفون","الموبايل","رقم الهاتف","phone","mobile","tel"],
+    taxNo:["الرقم الضريبي","tax no","tax number","vat no","trn"], address:["العنوان","address","city"], openBal:["الرصيد","الرصيد الافتتاحي","balance","opening balance"]},
+    tpl:[["الاسم","الهاتف","الرقم الضريبي","العنوان","الرصيد"],["محل أبو سامر","0791234567","","عمّان","120"]]},
+  staff:{col:"staff", f:{name:["الاسم","اسم الموظف","الموظف","العامل","name","employee"], phone:["الهاتف","التلفون","الموبايل","phone","mobile"], role:["الوظيفة","المسمى","role","job","title"],
+    rate:["الراتب","الأجر","اليومية","salary","wage","rate"], rateType:["نوع الأجر","يومي/شهري","pay type","type"], ssNo:["رقم الضمان","social security","ss no"]},
+    tpl:[["الاسم","الهاتف","الوظيفة","الراتب","نوع الأجر"],["أحمد علي","0791234567","فني","450","شهري"],["محمد سالم","0781234567","عامل","18","يومي"]]},
+};
+IMP.suppliers = {...IMP.customers, tpl:[["الاسم","الهاتف","الرقم الضريبي","العنوان","الرصيد"],["مستودعات النور","0791234567","123456789","الزرقاء","0"]]};
+const normH = h => String(h||"").toLowerCase().replace(/[ً-ْـ]/g,"").replace(/[أإآ]/g,"ا").replace(/ة/g,"ه").replace(/ى/g,"ي").replace(/[\s_\-:()%]+/g," ").trim();
+function mapCols(head, spec){
+  const m = {}; const H = head.map(normH);
+  Object.entries(spec.f).forEach(([k, names])=>{ const ns = names.map(normH); let i = H.findIndex(h=>ns.includes(h)); if(i<0) i = H.findIndex(h=>h && ns.some(n=>n.length>2 && (h.includes(n) || n.includes(h)))); if(i>=0 && !Object.values(m).includes(i)) m[k] = i; });
+  return m;
+}
+const IMP_MAX = 3000;
+let IMPS = null;
+function importSheet(kind){
+  kind = IMP[kind] ? kind : (IMPS && IMPS.kind) || "items"; IMPS = {kind, rows:null};
+  if(!canWrite(IMP[kind].col)){ toast(t("noPerm")); return; }
+  openSheet({title:t("imp"), saveLabel:t("impNone"),
+    html:`<p class="sub">${t("impSub")}</p>
+      <div class="field"><span class="flabel">${t("impWhat")}</span><div class="chips">${[["items",t("impItems")],["customers",t("impCust")],["suppliers",t("impSupp")],["staff",t("impStaff")]].map(([v,l])=>`<label><input type="radio" name="ikind" value="${v}" ${v===kind?"checked":""}><span>${l}</span></label>`).join("")}</div></div>
+      <button type="button" class="btn sm" data-act="impTpl">${icon("file")}${t("impTpl")}</button>
+      <div class="field"><label for="impFile">${t("impPick")}</label><input id="impFile" type="file" accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+      <div id="impOut"></div>`,
+    submit: ()=>importRun()});
+  document.getElementById("sheetSave").disabled = true;
+}
+async function importRead(file){
+  const out = document.getElementById("impOut"); if(!out) return;
+  out.innerHTML = `<span class="hint">${t("impRead")}</span>`; document.getElementById("sheetSave").disabled = true;
+  let rows;
+  try{
+    if(file.size > 8*1024*1024) throw new Error("big");
+    const buf = await file.arrayBuffer(), u = new Uint8Array(buf);
+    rows = (u[0]===0x50 && u[1]===0x4b) ? await readXlsx(buf) : readCsv(new TextDecoder(/�/.test(new TextDecoder().decode(u.subarray(0,4000))) ? "windows-1256" : "utf-8").decode(u));
+  }catch(e){ out.innerHTML = `<div class="alert bad">${icon("alert")}<span>${t("impBad")}</span></div>`; return; }
+  const spec = IMP[IMPS.kind], hi = rows.findIndex(r=>r.filter(Boolean).length>=1);
+  const head = rows[hi] || [], map = mapCols(head, spec);
+  if(map.name==null){ out.innerHTML = `<div class="alert bad">${icon("alert")}<span>${t("impNoName")}</span></div>`; return; }
+  const body = rows.slice(hi+1).filter(r=>String(r[map.name]||"").trim()).slice(0, IMP_MAX);
+  const recs = body.map(r=>importRecord(IMPS.kind, r, map)).filter(Boolean);
+  // skip what's already there (same name, or same barcode for items) and duplicates inside the file
+  const have = new Set((S[spec.col]||[]).filter(x=>IMPS.kind==="staff" ? x.active!==false : !x.archived).map(x=>normH(x.name)));
+  const codes = new Set(S.items.map(i=>i.barcode).filter(Boolean)), fresh = [];
+  recs.forEach(r=>{ const k = normH(r.name); if(have.has(k) || (r.barcode && codes.has(r.barcode))) return; have.add(k); if(r.barcode) codes.add(r.barcode); fresh.push(r); });
+  IMPS.rows = fresh;
+  const labels = Object.keys(map).map(k=>head[map[k]]).filter(Boolean).map(esc).join("، ");
+  out.innerHTML = `<div class="alert ${fresh.length?"good":"warn"}">${icon(fresh.length?"check":"alert")}<span>${t("impPrev",{n:`<b class="num">${fresh.length}</b>`, d:`<span class="num">${recs.length-fresh.length}</span>`})}</span></div>
+    <span class="hint">${t("impCols",{x:labels})}${rows.length-hi-1>IMP_MAX?" · "+t("impMax",{n:IMP_MAX}):""}</span>
+    ${fresh.length?`<div class="list">${fresh.slice(0,6).map(r=>`<div class="row static"><div class="m"><b>${esc(r.name)}</b><span class="sub">${esc(impSummary(IMPS.kind, r))}</span></div></div>`).join("")}</div>`:""}`;
+  const sv = document.getElementById("sheetSave"); sv.disabled = !fresh.length; sv.textContent = fresh.length ? t("impGo",{n:fresh.length}) : t("impNone");
+}
+function importRecord(kind, r, m){
+  const g = k => m[k]!=null ? String(r[m[k]]??"").trim() : "", n = k => num(toEn(g(k)).replace(/[^\d.\-]/g,""));
+  const name = g("name").slice(0, kind==="items"?120:100); if(!name) return null;
+  const now = Date.now();
+  if(kind==="items"){ const tx = g("tax")==="" ? taxRate() : Math.max(0, Math.min(50, n("tax") <= 1 && g("tax").includes(".") ? n("tax")*100 : n("tax")));
+    return {name, price:n("price"), cost:n("cost"), barcode:normBc(toEn(g("barcode"))), sku:g("sku").slice(0,40), unit:g("unit").slice(0,20), openQty:n("openQty"), minQty:n("minQty"), tax:tx, service:false, openDate:today(), createdAt:now}; }
+  if(kind==="staff"){ const rt = normH(g("rateType")), rate = n("rate");
+    const rateType = /يوم|day|daily/.test(rt) ? "day" : /اسبوع|week/.test(rt) ? "week" : /شهر|month/.test(rt) ? "month" : (rate && rate<60 ? "day" : "month");
+    return {name, phone:g("phone").slice(0,30), role:g("role").slice(0,60), rate, rateType, otRate:0, ssNo:g("ssNo").slice(0,30), ss:!!g("ssNo"), active:true, startDate:today(), unitId:(activeUnits()[0]||{}).id||"", createdAt:now}; }
+  return {name, kind:kind==="suppliers"?"supplier":"customer", phone:g("phone").slice(0,30), taxNo:g("taxNo").slice(0,30), address:g("address").slice(0,120), openBal:n("openBal"), limit:0, createdAt:now};
+}
+const impSummary = (kind, r) => kind==="items" ? [r.price?t("itemPrice")+" "+fmt(r.price):"", r.barcode, r.openQty?t("onHand")+" "+fmt(r.openQty):""].filter(Boolean).join(" · ")
+  : kind==="staff" ? [r.role, r.rate?fmt(r.rate)+" "+t(r.rateType==="day"?"daily":r.rateType==="week"?"weekly":"monthly"):""].filter(Boolean).join(" · ")
+  : [r.phone, r.address].filter(Boolean).join(" · ");
+async function importRun(){
+  if(!IMPS || !IMPS.rows || !IMPS.rows.length) return false;
+  const col = IMP[IMPS.kind].col, rows = IMPS.rows.map(d=>({company_id:CID, col, id:newId(), data:d}));
+  if(col==="staff" && !rows[0].data.unitId){ toast(tv("noUnitsSub")); return false; }
+  const sv = document.getElementById("sheetSave");
+  for(let i=0; i<rows.length; i+=200){
+    if(sv) sv.textContent = `${Math.min(i+200, rows.length)} / ${rows.length}`;
+    const { error } = await sb.from("records").upsert(rows.slice(i, i+200), {onConflict:"company_id,col,id"});
+    if(error){ toast(errMsg(error)); await loadAll(); render(); return false; }
+    rows.slice(i, i+200).forEach(r=>applyLocal(col, r.id, r.data));
+  }
+  toast(t("impDone",{n:rows.length})); IMPS = null; render(); return true;
+}
+function impTemplate(){
+  const spec = IMP[(IMPS&&IMPS.kind)||"items"], q = v => /[",;\n]/.test(v) ? `"${String(v).replace(/"/g,'""')}"` : v;
+  const csv = "﻿" + spec.tpl.map(r=>r.map(q).join(",")).join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})); a.download = `daftar-${(IMPS&&IMPS.kind)||"items"}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+
+/* =====================================================================
+   4. INSTALLMENTS
+   ===================================================================== */
+function instFields(x){
+  const n = x?.inst?.n || 6, first = x?.inst?.first || addMonthsKeep(today(), 1);
+  return [{name:"instN",label:t("instN"),type:"chips",options:[2,3,4,6,10,12,18,24,36].map(k=>[String(k),String(k)]),value:String(n)},
+    {name:"instFirst",label:t("instFirst"),type:"date",value:first}];
+}
+function instVis(){
+  const on = (document.querySelector('#sheetBody [name="due"]:checked')||{}).value==="inst";
+  ["instN","instFirst"].forEach(n=>{ const el = document.querySelector(`#sheetBody [name="${n}"]`); const f = el && el.closest(".field"); if(f) f.hidden = !on; });
+  const pl = document.querySelector('label[for="f_paidNow"]'); if(pl){ pl.dataset.base = pl.dataset.base || pl.textContent; pl.textContent = on ? t("instDown") : pl.dataset.base; }
+}
+function instApply(data, v, x){
+  if(v.due!=="inst" || data.type!=="sale"){ delete data.inst; return; }
+  const n = Math.max(2, Math.min(60, parseInt(v.instN)||6)), first = validDate(v.instFirst) ? v.instFirst : addMonthsKeep(data.date, 1);
+  const down = x?.inst ? Math.min(num(x.inst.down), data.total) : Math.min(Math.max(0, num(v.paidNow)), data.total);
+  data.inst = {n, first, down:r2(down)};
+  data.dueDate = addMonthsKeep(first, n-1);
+}
+/* the schedule, with what's been paid spread over it oldest first */
+function instRows(x){
+  if(!x || !x.inst) return [];
+  const total = invCalc(x).total, down = Math.min(num(x.inst.down), total), base = r2(total-down), n = Math.max(1, x.inst.n|0);
+  const each = Math.floor(base/n*100)/100;
+  let pool = Math.max(0, r2(invPaid(x) - down)); const t0 = today();
+  return Array.from({length:n}, (_, i)=>{
+    const amount = i===n-1 ? r2(base - each*(n-1)) : each, date = addMonthsKeep(x.inst.first, i);
+    const paid = r2(Math.min(pool, amount)); pool = r2(pool - paid); const left = r2(amount - paid);
+    return {k:i+1, date, amount, paid, left, state: left<=0.005 ? "paid" : date<t0 ? "late" : daysTo(date)<=7 ? "due" : "up"};
+  });
+}
+const instLate = x => instRows(x).some(r=>r.state==="late");
+const _invState0 = invState;
+invState = function(inv){ const st = _invState0(inv); if(inv.inst && inv.type==="sale" && st!=="paid" && !isDraft(inv.type)) return instLate(inv) ? "overdue" : invPaid(inv)>0.005 ? "partial" : "unpaid"; return st; };
+function instBlock(x){
+  const rows = instRows(x), next = rows.find(r=>r.left>0.005), late = rows.filter(r=>r.state==="late").length;
+  const pill = r => `<span class="pill ${r.state==="paid"?"good":r.state==="late"?"bad":r.state==="due"?"warn":""}">${t({paid:"stPaid",late:"stLate",due:"stUnpaid",up:"stUp"}[r.state])}</span>`;
+  return `<div class="panel inst"><div class="inst-h"><b>${t("instT")} · <span class="num">${x.inst.n}</span></b>${late?`<span class="pill bad">${t("instLateN",{n:late})}</span>`:""}</div>
+    ${num(x.inst.down)?`<div class="kv"><div><span>${t("instDown")}</span><b>${money(num(x.inst.down))}</b></div></div>`:""}
+    <span class="sub">${next ? t("instNext",{x:money(next.left), d:fdate(next.date)}) : t("instAllPaid")}</span>
+    <div class="list">${rows.map(r=>`<div class="row static"><div class="m"><b>${t("instK",{k:r.k})}</b><span class="sub">${fdate(r.date)}${r.paid>0.005&&r.left>0.005?` · ${t("paidL")} ${fmt(r.paid)}`:""}</span></div><div class="col end"><b>${money(r.amount)}</b>${pill(r)}</div></div>`).join("")}</div>
+    ${next?`<div class="grid2"><button type="button" class="btn primary" data-act="instPay" data-id="${esc(x.id)}">${icon("wallet")}${t("instPay")}</button><button type="button" class="btn" data-act="instWa" data-id="${esc(x.id)}">${icon("send")}${t("instRemind")}</button></div>`:""}</div>`;
+}
+function instWaText(x){
+  const rows = instRows(x), r = rows.find(z=>z.left>0.005); if(!r) return "";
+  const p = partyById(x.partyId)||{};
+  return t("instWa",{p:p.name||"", k:r.k, n:x.no||"", x:moneyTxt(r.left), d:dmy(r.date), r:moneyTxt(r2(invCalc(x).total-invPaid(x))), co:COMPANY.name||""});
+}
+const _bookAlerts0 = bookAlerts;
+bookAlerts = function(){
+  const out = _bookAlerts0();
+  const due = []; S.invoices.filter(x=>!x.void && x.inst && x.type==="sale").forEach(x=>instRows(x).forEach(r=>{ if(r.left>0.005 && daysTo(r.date)>=0 && daysTo(r.date)<=7) due.push(r); }));
+  if(due.length) out.push(["warn","calendar", t("aInstDue",{n:`<span class="num">${due.length}</span>`, x:money(sum(due,r=>r.left))})]);
+  const ex = expiringSoon(30); if(ex.length) out.push([ex.some(b=>b.days<0)?"bad":"warn","alert", t("aExp",{n:`<span class="num">${ex.length}</span>`}) + ": " + ex.slice(0,3).map(b=>esc(b.item.name)).join("، ")]);
+  return out;
+};
+
+/* =====================================================================
+   5. EXPIRY DATES
+   Stock comes in batches (opening quantity, purchase lines) that may carry an
+   expiry date. We assume the shop sells the earliest expiry first, so what's
+   left on the shelf is the latest batches.
+   ===================================================================== */
+function batchesOf(it){
+  const b = [];
+  if(num(it.openQty)>0 && it.openExp) b.push({exp:it.openExp, qty:num(it.openQty)});
+  liveInv().filter(x=>x.type==="purchase").forEach(x=>(x.lines||[]).forEach(l=>{ if(l.exp && num(l.qty)>0){ const i = itemOf(l); if(i && i.id===it.id) b.push({exp:l.exp, qty:num(l.qty)}); } }));
+  if(!b.length) return [];
+  let left = Math.max(0, qtyOf(it.id));
+  return b.sort((a,c)=>c.exp.localeCompare(a.exp)).map(x=>{ const q = Math.min(x.qty, left); left -= q; return {...x, left:r2(q)}; }).filter(x=>x.left>0);
+}
+function expiringSoon(days){
+  const out = [];
+  S.items.filter(stocked).forEach(it=>batchesOf(it).forEach(b=>{ const d = daysTo(b.exp); if(d<=days) out.push({item:it, exp:b.exp, qty:b.left, days:d}); }));
+  return out.sort((a,b)=>a.exp.localeCompare(b.exp));
+}
+function expiryPanel(){
+  const list = expiringSoon(60); if(!list.length) return "";
+  return `<div class="panel exp-panel"><b>${icon("alert")} ${t("expT")}</b><div class="list">${list.slice(0,30).map(b=>`<button class="row" data-act="viewItem" data-id="${esc(b.item.id)}"><div class="m"><b>${esc(b.item.name)}</b><span class="sub">${fdate(b.exp)}</span></div>
+    <div class="col end"><b class="num">${fmt(b.qty)} ${esc(b.item.unit||"")}</b><span class="pill ${b.days<0?"bad":b.days<=14?"warn":""}">${b.days<0?t("expGone"):t("expIn",{n:b.days})}</span></div></button>`).join("")}</div></div>`;
+}
+const _viewStock0 = viewStock;
+viewStock = function(){
+  const h = _viewStock0(), tools = `<div class="two"><button class="btn" data-act="labels">${icon("scan")}${t("labels")}</button><button class="btn" data-act="move">${icon("upload")}${t("mv")}</button></div>`;
+  const i = h.indexOf('<div class="panel">');
+  return i>=0 ? h.slice(0,i) + tools + expiryPanel() + h.slice(i) : h + tools;
+};
+const _itemSheet0 = itemSheet;
+itemSheet = function(id){
+  _itemSheet0(id); const it = S.items.find(i=>i.id===id); if(!it) return;
+  const bs = batchesOf(it), body = document.getElementById("sheetBody");
+  const extra = `${it.barcode?`<div class="bc-show">${code128Svg(it.barcode, 46)}<span class="ltr">${esc(it.barcode)}</span></div>`:""}
+    ${bs.length?`<div class="kv">${bs.map(b=>`<div><span>${t("lnExp").replace(/\s*\(.*\)/,"")} ${esc(dmy(b.exp))}</span><b class="num ${daysTo(b.exp)<0?"negv":""}">${fmt(b.left)}</b></div>`).join("")}</div>`:""}
+    <button type="button" class="btn sm" data-act="labels" data-id="${esc(id)}">${icon("scan")}${t("labels")}</button>`;
+  const kv = body && body.querySelector(".total"); if(kv) kv.insertAdjacentHTML("afterend", extra);
+};
+
+/* =====================================================================
+   6. RECURRING (monthly)
+   A template remembers an expense, income or invoice. Every month on its day
+   a copy is recorded. The copy's id is built from the template and the month,
+   so two phones running this at the same time can't record it twice.
+   ===================================================================== */
+const recOf = srcId => S.recurring.find(r=>r.srcId===srcId && r.active!==false);
+function recurBtn(kind, id){
+  if(!canWrite("recurring")) return "";
+  const r = recOf(id);
+  return r ? `<button type="button" class="btn ghost" data-act="recStop" data-id="${esc(r.id)}">${icon("repeat")}${t("recOn")} · ${t("recStop")}</button>`
+    : `<button type="button" class="btn ghost" data-act="recMake" data-id="${esc(id)}" data-k="${kind}">${icon("repeat")}${t("recMake")}</button>`;
+}
+function recSrc(kind, id){ return kind==="inv" ? invById(id) : kind==="exp" ? S.expenses.find(x=>x.id===id) : S.income.find(x=>x.id===id); }
+function recMake(kind, id){
+  const x = recSrc(kind, id); if(!x) return;
+  const day = Math.min(28, Math.max(1, parseD(x.date||today()).getDate()));
+  openSheet({title:t("recMake"), saveLabel:t("save"),
+    fields:[{name:"day",label:t("recDay"),type:"number",value:day,min:1,maxv:28}],
+    submit: async v=>{
+      const d = Math.min(28, Math.max(1, parseInt(v.day)||day));
+      const snap = strip(x); ["no","files","createdAt","demo","void","srcId","inst"].forEach(k=>delete snap[k]);
+      const ok = await save("recurring", newId(), {kind, srcId:id, day:d, start:addMonths(monthStartOf(x.date||today()),1).slice(0,7), data:snap, active:true, createdAt:Date.now()}, true);
+      if(!ok){ toast(t("recNeedDb")); return false; }
+      toast(t("recSaved",{d})); render(); return true; }});
+}
+let recBusy = false;
+async function recurRun(){
+  if(recBusy || !CID || !S.recurring.length || !canWrite("recurring")) return; recBusy = true;
+  let made = 0;
+  try{
+    const t0 = today(), cur = t0.slice(0,7);
+    for(const r of S.recurring.filter(r=>r.active!==false && r.data)){
+      const col = r.kind==="inv" ? "invoices" : r.kind==="exp" ? "expenses" : "income";
+      if(!canWrite(col)) continue;
+      // catch up at most three months back
+      let ym = r.start > addMonths(cur+"-01",-2).slice(0,7) ? r.start : addMonths(cur+"-01",-2).slice(0,7);
+      for(; ym<=cur; ym = addMonths(ym+"-01",1).slice(0,7)){
+        const date = `${ym}-${String(r.day).padStart(2,"0")}`; if(date>t0) break;
+        const id = `rc-${r.id}-${ym}`; if(S[col].some(x=>x.id===id)) continue;
+        let data = {...r.data, date, createdAt:Date.now(), recId:r.id};
+        if(col==="invoices"){ const span = r.data.dueDate && r.data.date ? Math.max(0, daysTo(r.data.dueDate)-daysTo(r.data.date)) : 0;
+          data = {...data, no:nextNo("invoices", INV_PFX[r.data.type]||"S"), dueDate:addDays(date, span)}; data.total = invCalc(data).total; }
+        if(col!=="invoices" && !unitById(data.unitId)) continue;
+        if(await save(col, id, data, true)) made++;
+      }
+    }
+  } finally { recBusy = false; }
+  if(made){ toast(t("recRan",{n:made})); render(); }
+}
+function recurSheet(){
+  const list = S.recurring.filter(r=>r.active!==false);
+  const lab = r => r.kind==="inv" ? `${t("recKInv")} · ${esc((partyById(r.data.partyId)||{}).name||"")}` : `${t(r.kind==="exp"?"recKExp":"recKInc")} · ${esc(catLabel(r.data.category||""))}${r.data.item?" · "+esc(r.data.item):""}`;
+  const amt = r => r.kind==="inv" ? invCalc(r.data).total : num(r.data.amount);
+  const next = r => { const t0 = today(), d = t0.slice(0,8)+String(r.day).padStart(2,"0"); return d>=t0 ? d : addMonthsKeep(d, 1); };
+  openSheet({title:t("recT"), noSave:true, html: list.length ? `<div class="list">${list.map(r=>`<div class="row static"><span class="tx-ic">${icon("repeat")}</span><div class="m"><b>${lab(r)}</b><span class="sub">${t("recNext",{d:fdate(next(r))})}</span></div>
+      <div class="col end"><b>${money(amt(r))}</b>${canWrite("recurring")?`<button type="button" class="linkbtn" data-act="recStop" data-id="${esc(r.id)}">${t("recStop")}</button>`:""}</div></div>`).join("")}</div>` : `<span class="hint">${t("recNone")}</span>`});
+}
+/* run after every full load (login, coming back to the app) */
+const _loadAll0 = loadAll;
+loadAll = async function(){ const ok = await _loadAll0(); if(ok) setTimeout(recurRun, 700); return ok; };
+/* "repeat monthly" also on expense and income forms */
+const _moneyForm0 = moneyForm;
+moneyForm = function(kind, x, preset){ _moneyForm0(kind, x, preset); if(x){ const b = recurBtn(kind==="exp"?"exp":"inc", x.id); if(b) document.getElementById("sheetBody").insertAdjacentHTML("beforeend", `<div class="grid2">${b}</div>`); } };
+
+/* ----- actions ----- */
+Object.assign(A, {
+  bcCam: id => bcCamera(code=>{ if(id==="pos" && POS){ const it = itemByCode(code); if(it && num(it.price)>0){ A.posAdd(it.id); beep(); toast(t("bcFound",{x:it.name})); } else bcUnknown(code); } else bcHandle(code); }),
+  bcCamClose: () => bcCamClose(),
+  bcGen: () => { const el = document.getElementById("f_barcode"); if(el){ el.value = genCode(); } },
+  bcNew: id => { document.getElementById("toast").hidden = true; closeSheet(); itemForm(null); setTimeout(()=>{ const el = document.getElementById("f_barcode"); if(el) el.value = id; const n = document.getElementById("f_name"); if(n) n.focus(); }, 60); },
+  scan: () => bcCamera(bcHandle),
+  labels: id => { closeSheet(); labelsSheet(id||null); },
+  imp: id => { closeSheet(); importSheet(id); },
+  impKind: id => { if(IMPS){ IMPS.kind = id; IMPS.rows = null; } const o = document.getElementById("impOut"); if(o) o.innerHTML = ""; const f = document.getElementById("impFile"); if(f) f.value = ""; document.getElementById("sheetSave").disabled = true; },
+  impTpl: () => impTemplate(),
+  instPay: id => { const x = invById(id); if(!x) return; const r = instRows(x).find(z=>z.left>0.005); closeSheet(); voucherForm(null, {type:"receipt", partyId:x.partyId, invoiceId:x.id, amount:String(r ? r.left : r2(invCalc(x).total-invPaid(x)))}); },
+  instWa: id => { const x = invById(id); if(x) openWaText((partyById(x.partyId)||{}).phone, instWaText(x)); },
+  recMake: (id, el) => { closeSheet(); recMake(el.dataset.k, id); },
+  recStop: async id => { const r = S.recurring.find(x=>x.id===id); if(!r) return; if(await save("recurring", id, {...strip(r), active:false}, true)){ toast(t("recStopped")); closeSheet(); render(); } },
+  recurring: () => { closeSheet(); recurSheet(); },
+});
+document.addEventListener("change", e=>{
+  if(e.target.id==="impFile" && e.target.files && e.target.files[0]) importRead(e.target.files[0]);
+  if(e.target.name==="due") instVis();
+  if(e.target.name==="ikind") A.impKind(e.target.value);
+});
+/* =====================================================================
+   Moving in from another program.
+   Drop every Excel/CSV file the old program exported (items, customers,
+   suppliers, staff, sales, purchases, expenses). Each file's kind is guessed
+   from its headings and name, shown as a plan the owner can correct, then
+   everything is brought in at once.
+
+   Two ways to bring old invoices:
+   - archive (default): kept for reference and search; they don't touch
+     balances, stock or the books, because the opening balances and current
+     quantities from the other files already include them.
+   - count: they become real invoices (unpaid part = what the customer owes).
+     Their lines never move stock; the current quantities came from the items file.
+   ===================================================================== */
+Object.assign(L, {
+  mv:["انقل من برنامج ثاني","Move from another program"], mvSub:["جيب كل بياناتك من البرنامج القديم بدقائق: الأصناف والكميات، الزباين والموردين وأرصدتهم، الموظفين، الفواتير، والمصاريف.","Bring everything from your old program in minutes: items and quantities, customers and suppliers with balances, staff, invoices and expenses."],
+  mvFrom:["من وين جاي؟","Where are you coming from?"], mvOther:["برنامج ثاني","Another program"], mvDesk:["برنامج على الكمبيوتر","Desktop program"], mvXls:["Excel أو دفتر ورق","Excel or a paper book"],
+  mvGuide:["صدّر من برنامجك القديم كل قائمة لحالها كـ Excel: الأصناف، العملاء، الموردين، الموظفين، فواتير المبيعات، فواتير المشتريات، والمصاريف. بمعظم البرامج بتلاقي فوق كل قائمة زر «تصدير» أو Export. بعدها اختارهم كلهم هون مرة وحدة.",
+    "Export each list from your old program to Excel: items, customers, suppliers, staff, sales invoices, purchase invoices and expenses. Most programs have an \"Export\" button above each list. Then pick them all here at once."],
+  mvGuideXls:["إذا حساباتك على Excel أو بدفتر ورق: نزّل النماذج الجاهزة، عبّيها، وارجع اختارها هون.","If your books are in Excel or on paper: download the ready templates, fill them in, and pick them here."],
+  mvTpls:["النماذج الجاهزة","Ready templates"], mvPick:["اختار الملفات (بتقدر تختار أكثر من ملف)","Choose the files (you can pick several)"],
+  mvPlan:["هيك فهمنا ملفاتك. إذا في نوع غلط غيّره:","Here's how we read your files. Fix any wrong type:"], mvRows:["{n} سطر","{n} rows"], mvNew:["{n} جديد","{n} new"],
+  mvSkip:["تجاهل هالملف","Skip this file"], mvUnknown:["ما عرفنا شو هاد الملف","We couldn't tell what this file is"],
+  kItems:["أصناف وكميات","Items & stock"], kCust:["زباين وأرصدتهم","Customers & balances"], kSupp:["موردين وأرصدتهم","Suppliers & balances"], kStaff:["موظفين","Staff"],
+  kSales:["فواتير مبيعات","Sales invoices"], kPurch:["فواتير مشتريات","Purchase invoices"], kExp:["مصاريف","Expenses"],
+  mvMode:["الفواتير القديمة","Old invoices"], mvArch:["للأرشيف بس (أنصح فيها)","For reference only (recommended)"], mvCount:["احسبها بالأرصدة","Count them in balances"],
+  mvArchHint:["بتضل موجودة وبتقدر تدوّر عليها، بس ما بتغيّر الأرصدة ولا المخزون، لأنه أرصدة الزباين والكميات بملفاتهم بتشملها.","They stay searchable but don't change balances or stock, because the customers' balances and item quantities already include them."],
+  mvCountHint:["الباقي من كل فاتورة بيصير على الزبون أو للمورد. استخدمها إذا ما رح تنقل أرصدة الزباين والموردين.","What's left on each invoice becomes owed. Use this only if you're not moving customer and supplier balances."],
+  mvNoPaid:["ملف «{x}» ما فيه عمود للمدفوع، فرح نعتبر فواتيره مش مدفوعة.","\"{x}\" has no paid column, so its invoices will count as unpaid."],
+  mvGo:["انقل كل شي","Move everything"], mvWorking:["عم ننقل… {x}","Moving… {x}"], mvDone:["خلص النقل","Move complete"],
+  mvSummary:["انضاف: {x}","Added: {x}"], mvAgain:["بتقدر تعيد اختيار نفس الملفات، والمكرر بنتجاهله.","You can pick the same files again; duplicates are skipped."],
+  mvVideo:["شوف كيف بالفيديو","Watch how"], stArch:["أرشيف","Archive"], movedNote:["منقول من البرنامج القديم","Moved from the old program"], mvUnitName:["الشركة","Company"],
+  mvAsk:["جاي من برنامج ثاني؟","Coming from another program?"], mvAskS:["انقل أصنافك وزباينك وموظفينك وفواتيرك بدقائق، بدون ما تدخّلهم من جديد.","Bring your items, customers, staff and invoices in minutes, no retyping."], mvStart:["انقل بياناتي","Move my data"],
+  mvNeedFiles:["اختار ملف واحد على الأقل","Choose at least one file"], mvSuppSign:["رصيد المورد الموجب يعني إله علينا.","A positive supplier balance means we owe them."],
+});
+
+/* the extra kinds next to items / customers / suppliers / staff */
+IMP.sales = {col:"invoices", inv:"sale", f:{
+  no:["رقم الفاتوره","رقم الفاتورة","رقم","الرقم","invoice no","invoice number","invoice #","number","no","#","ref","reference"],
+  date:["التاريخ","تاريخ الفاتوره","تاريخ الفاتورة","تاريخ الاصدار","date","invoice date","issue date"],
+  party:["العميل","الزبون","اسم العميل","اسم الزبون","customer","client","customer name","client name","contact","bill to"],
+  item:["الصنف","المنتج","البند","اسم الصنف","item","product","item name","product name","line item"],
+  desc:["الوصف","البيان","description","details","memo"],
+  qty:["الكميه","الكمية","qty","quantity"], price:["السعر","سعر الوحده","سعر الوحدة","unit price","price","rate"],
+  tax:["نسبه الضريبه","نسبة الضريبة","الضريبه %","tax rate","vat rate","tax %"],
+  total:["الاجمالي","الإجمالي","المجموع","الاجمالي شامل الضريبه","الإجمالي شامل الضريبة","total","grand total","total amount","amount","invoice total"],
+  paid:["المدفوع","المبلغ المدفوع","المحصل","paid","amount paid","paid amount"],
+  due:["تاريخ الاستحقاق","الاستحقاق","due date","due"]},
+  tpl:[["رقم الفاتورة","التاريخ","العميل","الصنف","الكمية","السعر","الإجمالي","المدفوع"],["1001","2026-09-14","محل أبو سامر","سكر 1 كيلو","10","1.2","12","12"],["1002","2026-09-20","شركة النور","أرز 5 كيلو","4","6.5","26","0"]]};
+IMP.purchases = {...IMP.sales, inv:"purchase", f:{...IMP.sales.f, party:["المورد","اسم المورد","المورّد","supplier","vendor","supplier name","vendor name","contact"]},
+  tpl:[["رقم الفاتورة","التاريخ","المورد","الصنف","الكمية","السعر","الإجمالي","المدفوع"],["A-55","2026-09-02","مستودعات النور","سكر 1 كيلو","100","0.95","95","95"]]};
+IMP.expenses = {col:"expenses", f:{
+  date:["التاريخ","date"], amount:["المبلغ","القيمه","القيمة","المصروف","amount","value","total"],
+  cat:["البند","الحساب","التصنيف","النوع","نوع المصروف","category","account","type","expense type"],
+  desc:["الوصف","البيان","ملاحظات","description","memo","notes","details"], supplier:["المورد","الجهه","الجهة","المحل","supplier","vendor","payee"]},
+  tpl:[["التاريخ","البند","الوصف","المبلغ"],["2026-09-01","إيجار","إيجار المحل لشهر 9","350"],["2026-09-05","كهرباء","فاتورة الكهرباء","62.5"]]};
+IMP.suppliers.f = {...IMP.customers.f, name:["الاسم","اسم المورد","المورد","المورّد","الشركه","الشركة","name","supplier","vendor","supplier name","vendor name","company"]};
+const MV_KINDS = [["items","kItems"],["customers","kCust"],["suppliers","kSupp"],["staff","kStaff"],["sales","kSales"],["purchases","kPurch"],["expenses","kExp"]];
+const MV_NAME_HINT = {items:/item|product|stock|inventor|sku|صنف|اصناف|أصناف|منتج|مخزون|بضاع|مواد/i, customers:/customer|client|عميل|عملاء|زبون|زبائن|زباين/i, suppliers:/supplier|vendor|مورد|موردين|مورّد/i,
+  staff:/employee|staff|payroll|موظف|موظفين|عمال|رواتب|الموارد/i, sales:/sale|invoice|مبيع|فواتير|فاتوره|فاتورة/i, purchases:/purchase|bill|مشتري|شراء/i, expenses:/expense|مصروف|مصاريف|نفقات|المصروفات/i};
+/* what makes each kind recognisable (weights for the headings we found) */
+const MV_W = {items:{name:2,price:2,cost:2,barcode:3,openQty:2,unit:1,sku:1}, customers:{name:2,phone:2,taxNo:1,address:1,openBal:2}, suppliers:{name:2,phone:2,taxNo:1,address:1,openBal:2},
+  staff:{name:2,rate:3,role:2,rateType:3,ssNo:3}, sales:{no:3,date:2,party:3,total:2,paid:2,item:1,qty:1,price:1}, purchases:{no:3,date:2,party:3,total:2,paid:2,item:1,qty:1,price:1}, expenses:{date:2,amount:3,cat:3,desc:1,supplier:1}};
+function mvGuess(head, fname){
+  const H = head.map(normH), sc = {};
+  Object.keys(MV_W).forEach(k=>{ const m = mapCols(head, IMP[k]); let s = 0; Object.keys(m).forEach(f=>s += MV_W[k][f]||0);
+    if(["items","customers","suppliers","staff"].includes(k) && m.name==null) s = 0;
+    if((k==="sales"||k==="purchases") && (m.party==null || (m.total==null && m.price==null))) s = 0;
+    if(k==="expenses" && (m.amount==null || m.date==null)) s = 0;
+    if(MV_NAME_HINT[k].test(fname)) s += 4;
+    sc[k] = s; });
+  // the party heading tells sales from purchases
+  const supH = H.some(h=>/مورد|supplier|vendor/.test(h)), cusH = H.some(h=>/عميل|زبون|customer|client/.test(h));
+  if(sc.sales && supH && !cusH) sc.purchases += 3; if(sc.purchases && cusH && !supH) sc.sales += 3;
+  if(sc.customers && sc.suppliers && !MV_NAME_HINT.suppliers.test(fname)) sc.suppliers -= 1;
+  const best = Object.entries(sc).sort((a,b)=>b[1]-a[1])[0];
+  return best && best[1]>=4 ? best[0] : "";
+}
+/* dates: 2026-09-14, 14/09/2026, 14-9-26, Excel serials (45730) */
+function mvDate(v){
+  const s = toEn(String(v||"")).trim(); if(!s) return "";
+  if(/^\d{5}(\.\d+)?$/.test(s)){ const d = new Date(Date.UTC(1899,11,30) + Math.floor(Number(s))*864e5); return d.toISOString().slice(0,10); }
+  let m = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(s); if(m) return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/.exec(s);
+  if(m){ let d = +m[1], mo = +m[2], y = +m[3]; if(y<100) y += 2000; if(mo>12 && d<=12){ const x = d; d = mo; mo = x; }   // a US-style date
+    if(mo>=1 && mo<=12 && d>=1 && d<=31) return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+  const p = Date.parse(s); return isFinite(p) ? new Date(p).toISOString().slice(0,10) : "";
+}
+const mvNum = v => num(toEn(String(v??"")).replace(/[٬,\s]/g,"").replace(/٫/g,".").replace(/[^\d.\-]/g,""));
+
+/* ---------------- reading the files into a plan ---------------- */
+let MV = null;
+async function mvReadFile(file){
+  const buf = await file.arrayBuffer(), u = new Uint8Array(buf);
+  return (u[0]===0x50 && u[1]===0x4b) ? await readXlsx(buf) : readCsv(new TextDecoder(/�/.test(new TextDecoder().decode(u.subarray(0,4000))) ? "windows-1256" : "utf-8").decode(u));
+}
+async function mvAddFiles(files){
+  for(const f of files){
+    if(f.size > 8*1024*1024){ MV.files.push({name:f.name, err:true}); continue; }
+    let rows; try{ rows = await mvReadFile(f); }catch(e){ MV.files.push({name:f.name, err:true}); continue; }
+    const hi = rows.findIndex(r=>r.filter(Boolean).length>=2), head = rows[hi] || [];
+    MV.files.push({name:f.name, head, body:rows.slice(hi+1).slice(0, IMP_MAX), kind:mvGuess(head, f.name)});
+  }
+  mvRender();
+}
+/* what a file would add, without saving anything */
+function mvPreview(fl){
+  if(!fl.kind || !IMP[fl.kind]) return {n:0, recs:[]};
+  const spec = IMP[fl.kind], map = mapCols(fl.head, spec);
+  if(fl.kind==="sales" || fl.kind==="purchases") return mvInvoices(fl, map);
+  if(fl.kind==="expenses") return mvExpenses(fl, map);
+  if(map.name==null) return {n:0, recs:[]};
+  const recs = fl.body.filter(r=>String(r[map.name]||"").trim()).map(r=>importRecord(fl.kind, r, map)).filter(Boolean);
+  if(fl.kind==="suppliers") recs.forEach(r=>{ r.openBal = -r.openBal; });   // a supplier's balance is what we owe them
+  const have = new Set((S[spec.col]||[]).filter(x=>fl.kind==="staff" ? x.active!==false : !x.archived).map(x=>normH(x.name)));
+  const codes = new Set(S.items.map(i=>i.barcode).filter(Boolean)), fresh = [];
+  recs.forEach(r=>{ const k = normH(r.name); if(have.has(k) || (r.barcode && codes.has(r.barcode))) return; have.add(k); if(r.barcode) codes.add(r.barcode); fresh.push(r); });
+  return {n:fresh.length, recs:fresh, map};
+}
+function mvInvoices(fl, map){
+  const groups = new Map(), g = (r,k) => map[k]!=null ? String(r[map[k]]??"").trim() : "";
+  fl.body.forEach((r, i)=>{ const party = g(r,"party"); if(!party) return; const no = g(r,"no") || `#${i+1}`; if(!groups.has(no)) groups.set(no, []); groups.get(no).push(r); });
+  const type = IMP[fl.kind].inv, seen = new Set(S.invoices.filter(x=>x.extNo).map(x=>x.type+"|"+x.extNo)), recs = [];
+  groups.forEach((rows, no)=>{
+    if(seen.has(type+"|"+no)) return;
+    const first = rows[0], date = mvDate(g(first,"date")) || today();
+    let lines = rows.map(r=>({name:(g(r,"item")||g(r,"desc")).slice(0,120), qty:mvNum(g(r,"qty"))||1, price:mvNum(g(r,"price")), tax:Math.min(50, mvNum(g(r,"tax"))), disc:0, nostock:true})).filter(l=>l.name && l.price>0);
+    // an invoice spread over several rows either repeats its total/paid on each row, or gives one per line
+    const per = k => { if(map[k]==null) return 0; const v = rows.map(r=>mvNum(g(r,k))); return v.every(x=>x===v[0]) ? v[0] : sum(v, x=>x); };
+    const fileTotal = per("total"), paid = per("paid"), calc = invCalc({lines, incTax:false}).total;
+    // the file's own total wins: if the lines don't add up to it, keep one line carrying the total
+    if(!lines.length || (fileTotal && Math.abs(calc-fileTotal) > Math.max(0.05, fileTotal*0.002))){
+      const tot = fileTotal || calc; if(!(tot>0)) return;
+      lines = [{name:(lines.length ? lines.map(l=>l.name).slice(0,4).join("، ") : t("movedNote")).slice(0,120), qty:1, price:r2(tot), tax:0, disc:0, nostock:true}];
+    }
+    recs.push({type, no, date, due:mvDate(g(first,"due")) || date, party:g(first,"party").slice(0,100), lines, paid:r2(paid)});
+  });
+  return {n:recs.length, recs, map, noPaid: map.paid==null};
+}
+function mvExpenses(fl, map){
+  const g = (r,k) => map[k]!=null ? String(r[map[k]]??"").trim() : "";
+  const seen = new Set(S.expenses.filter(x=>x.extKey).map(x=>x.extKey)), recs = [];
+  fl.body.forEach(r=>{ const amount = mvNum(g(r,"amount")), date = mvDate(g(r,"date")); if(!(amount>0) || !date) return;
+    const key = [date, amount, g(r,"cat"), g(r,"desc")].join("|"); if(seen.has(key)) return; seen.add(key);
+    recs.push({date, amount, cat:g(r,"cat").slice(0,40), desc:g(r,"desc").slice(0,160), supplier:g(r,"supplier").slice(0,80), key}); });
+  return {n:recs.length, recs, map};
+}
+
+/* ---------------- the wizard ---------------- */
+function moveSheet(){
+  if(!canWrite("items")){ toast(t("noPerm")); return; }
+  MV = {from:MV?.from||"other", files:[], mode:"hist", busy:false};
+  openSheet({title:t("mv"), saveLabel:t("mvGo"), html:`<div id="mvBox"></div>`, submit: ()=>mvRun()});
+  mvRender();
+}
+function mvRender(){
+  const box = document.getElementById("mvBox"); if(!box || !MV) return;
+  const plans = MV.files.map(fl=>({fl, p: fl.err ? {n:0} : mvPreview(fl)}));
+  const hasInv = plans.some(x=>x.fl.kind==="sales"||x.fl.kind==="purchases"), total = sum(plans, x=>x.p.n||0);
+  box.innerHTML = `<p class="sub">${t("mvSub")}</p>
+    <button type="button" class="btn sm" data-act="mvVideo">${icon("camera")}${t("mvVideo")}</button>
+    <div class="field"><span class="flabel">${t("mvFrom")}</span><div class="chips">${[["other",t("mvOther")],["desk",t("mvDesk")],["xls",t("mvXls")]].map(([v,l])=>`<label><input type="radio" name="mvfrom" value="${v}" ${MV.from===v?"checked":""}><span>${l}</span></label>`).join("")}</div>
+      <span class="hint">${MV.from==="xls" ? t("mvGuideXls") : t("mvGuide")}</span></div>
+    ${MV.from==="xls" ? `<div class="field"><span class="flabel">${t("mvTpls")}</span><div class="chips">${MV_KINDS.map(([k,l])=>`<button type="button" class="btn sm" data-act="mvTpl" data-id="${k}">${icon("file")}${t(l)}</button>`).join("")}</div></div>` : ""}
+    <div class="field"><label for="mvFiles">${t("mvPick")}</label><input id="mvFiles" type="file" multiple accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+    ${plans.length ? `<span class="flabel">${t("mvPlan")}</span><div class="list mv-plan">${plans.map(({fl,p},i)=>`<div class="row static mv-row"><span class="tx-ic">${icon(fl.err?"alert":"file")}</span>
+      <div class="m"><b class="ltr-auto">${esc(fl.name)}</b><span class="sub">${fl.err ? t("impBad") : !fl.kind ? t("mvUnknown") : t("mvRows",{n:fl.body.length})+" · "+t("mvNew",{n:p.n})}</span></div>
+      ${fl.err?"":`<select class="mv-kind" data-i="${i}" aria-label="${esc(fl.name)}"><option value="">${t("mvSkip")}</option>${MV_KINDS.map(([k,l])=>`<option value="${k}" ${fl.kind===k?"selected":""}>${t(l)}</option>`).join("")}</select>`}</div>`).join("")}</div>
+      ${plans.some(x=>x.fl.kind==="suppliers")?`<span class="hint">${t("mvSuppSign")}</span>`:""}` : ""}
+    ${hasInv ? `<div class="field"><span class="flabel">${t("mvMode")}</span><div class="chips">${[["hist",t("mvArch")],["count",t("mvCount")]].map(([v,l])=>`<label><input type="radio" name="mvmode" value="${v}" ${MV.mode===v?"checked":""}><span>${l}</span></label>`).join("")}</div>
+      <span class="hint">${MV.mode==="hist" ? t("mvArchHint") : t("mvCountHint")}</span>
+      ${MV.mode==="count" ? plans.filter(x=>x.p.noPaid).map(x=>`<div class="alert warn">${icon("alert")}<span>${esc(t("mvNoPaid",{x:x.fl.name}))}</span></div>`).join("") : ""}</div>` : ""}
+    <div id="mvOut"></div>`;
+  const sv = document.getElementById("sheetSave"); if(sv && !MV.busy){ sv.disabled = !total; sv.textContent = total ? `${t("mvGo")} · ${total}` : t("mvGo"); }
+}
+async function bulkSave(col, list){
+  const rows = list.map(d=>({company_id:CID, col, id:d.__id || newId(), data:(({__id, ...x})=>x)(d)}));
+  for(let i=0; i<rows.length; i+=200){
+    const { error } = await sb.from("records").upsert(rows.slice(i, i+200), {onConflict:"company_id,col,id"});
+    if(error) throw error;
+    rows.slice(i, i+200).forEach(r=>applyLocal(col, r.id, r.data));
+  }
+  return rows.map(r=>r.id);
+}
+async function mvRun(){
+  if(!MV || MV.busy) return false;
+  const plans = MV.files.filter(fl=>!fl.err && fl.kind).map(fl=>({fl, p:mvPreview(fl)})).filter(x=>x.p.n);
+  if(!plans.length){ toast(t("mvNeedFiles")); return false; }
+  MV.busy = true; const sv = document.getElementById("sheetSave"); sv.disabled = true;
+  const say = x => { sv.textContent = t("mvWorking",{x}); }, done = {};
+  const order = ["items","customers","suppliers","staff","sales","purchases","expenses"];
+  plans.sort((a,b)=>order.indexOf(a.fl.kind)-order.indexOf(b.fl.kind));
+  try{
+    for(const {fl, p} of plans){
+      const k = fl.kind, lab = t(MV_KINDS.find(x=>x[0]===k)[1]); say(lab);
+      if(k==="staff" && !activeUnits().length) await mvEnsureUnit();
+      if(["items","customers","suppliers","staff"].includes(k)){
+        const recs = k==="staff" ? p.recs.map(r=>({...r, unitId:r.unitId || (activeUnits()[0]||{}).id || ""})) : p.recs;
+        await bulkSave(IMP[k].col, recs); done[lab] = (done[lab]||0) + recs.length; continue; }
+      if(k==="expenses"){ const uid = (activeUnits()[0] || await mvEnsureUnit() || {}).id, u = unitById(uid), cats = unitCats(u, "exp").map(c=>c[0]);
+        const pick = c => { const n = normH(c); return cats.find(x=>normH(catLabel(x))===n) || cats.find(x=>n && (normH(catLabel(x)).includes(n) || n.includes(normH(catLabel(x))))) || cats[cats.length-1]; };
+        await bulkSave("expenses", p.recs.map(r=>({unitId:uid, category:pick(r.cat), amount:r.amount, date:r.date, item:(r.desc || r.cat).slice(0,160), supplier:r.supplier, payBy:"cash", files:[], extKey:r.key, moved:true, createdAt:Date.now()})));
+        done[lab] = (done[lab]||0) + p.recs.length; continue; }
+      // invoices: make sure every customer / supplier exists first
+      const side = k==="sales" ? "customer" : "supplier", newParties = [];
+      const byName = new Map(S.parties.filter(x=>!x.archived).map(x=>[normH(x.name), x.id]));
+      p.recs.forEach(r=>{ const n = normH(r.party); if(!byName.has(n)){ const id = newId(); byName.set(n, id); newParties.push({__id:id, name:r.party, kind:side, phone:"", openBal:0, limit:0, createdAt:Date.now()}); } });
+      if(newParties.length) await bulkSave("parties", newParties);
+      const invs = [], vouchers = [], hist = MV.mode!=="count";
+      p.recs.forEach(r=>{ const id = newId(), data = {__id:id, type:r.type, no:String(r.no).slice(0,40), extNo:r.no, partyId:byName.get(normH(r.party)), date:r.date, dueDate:r.due<r.date?r.date:r.due, lines:r.lines, storeId:MAIN_STORE, incTax:false, discount:0, notes:t("movedNote"), moved:true, hist, createdAt:Date.now()};
+        data.total = invCalc(data).total; invs.push(data);
+        const paid = Math.min(r.paid, data.total);
+        if(!hist && paid>0.005) vouchers.push({type:r.type==="sale"?"receipt":"payment", partyId:data.partyId, amount:r2(paid), date:r.date, method:"cash", invoiceId:id, note:t("movedNote"), moved:true}); });
+      await bulkSave("invoices", invs);
+      if(vouchers.length){ const pre = {receipt:"RV", payment:"PV"}, base = {};
+        ["receipt","payment"].forEach(tp=>{ const all = S.vouchers.map(v=>String(v.no||"")).filter(n=>n.startsWith(pre[tp]+"-")).map(n=>parseInt(n.slice(3))||0); base[tp] = all.length ? Math.max(...all) : 0; });
+        await bulkSave("vouchers", vouchers.map(v=>({...v, no:`${pre[v.type]}-${String(++base[v.type]).padStart(4,"0")}`, createdAt:Date.now()}))); }
+      done[lab] = (done[lab]||0) + invs.length;
+    }
+  }catch(e){ MV.busy = false; toast(errMsg(e)); await loadAll(); render(); mvRender(); return false; }
+  MV.busy = false; render();
+  const txt = Object.entries(done).map(([k,v])=>`${k} ${v}`).join("، ");
+  openSheet({title:t("mvDone"), noSave:true, html:`<div class="alert good">${icon("check")}<span>${esc(t("mvSummary",{x:txt}))}</span></div><span class="hint">${t("mvAgain")}</span>
+    <div class="grid2"><button type="button" class="btn primary" data-act="mvGoto" data-id="stock">${t("bkStock")}</button><button type="button" class="btn" data-act="mvGoto" data-id="parties">${t("bkParties")}</button></div>`});
+  return false;
+}
+async function mvEnsureUnit(){
+  if(activeUnits().length) return activeUnits()[0];
+  const id = newId(); await save("units", id, {name:COMPANY.name || t("mvUnitName"), kind:ST().type, status:"active", startDate:today(), createdAt:Date.now()}, true);
+  return unitById(id);
+}
+
+/* a one-time card for a fresh company: "coming from another program?" */
+function moveHomeCard(){
+  if(lsGet("mvHide_"+CID, 0) || !canWrite("items") || S.items.length || S.parties.filter(p=>!p.walkIn).length || S.invoices.length) return "";
+  return `<div class="panel grow push-card"><span class="tx-ic">${icon("upload")}</span><div class="col"><b>${t("mvAsk")}</b><span class="sub">${t("mvAskS")}</span></div>
+    <div class="row-btns"><button class="btn sm primary" data-act="move">${t("mvStart")}</button><button class="btn sm ghost" data-act="mvHide">${t("pushLater")}</button></div></div>`;
+}
+Object.assign(A, {
+  mvHide: () => { lsSet("mvHide_"+CID, 1); render(); },
+  move: () => { closeSheet(); moveSheet(); },
+  mvGoto: id => { closeSheet(); S.view = "money"; S.btab = id; scrollTo(0,0); render(); },
+  mvTpl: id => { IMPS = {kind:id}; impTemplate(); },
+  mvVideo: () => { const a = document.createElement("a"); a.href = "/#move"; a.target = "_blank"; a.rel = "noopener"; a.click(); },
+});
+document.addEventListener("change", async e=>{
+  if(!MV) return;
+  if(e.target.id==="mvFiles" && e.target.files && e.target.files.length){ const fs = [...e.target.files]; e.target.value = ""; await mvAddFiles(fs); }
+  else if(e.target.classList && e.target.classList.contains("mv-kind")){ const fl = MV.files[+e.target.dataset.i]; if(fl){ fl.kind = e.target.value; mvRender(); } }
+  else if(e.target.name==="mvmode"){ MV.mode = e.target.value; mvRender(); }
+  else if(e.target.name==="mvfrom"){ MV.from = e.target.value; mvRender(); }
+});
+/* =====================================================================
+   1. Loyalty points: customers earn points on what they buy and spend
+      them as a discount at the cashier.
+   2. Appointments: clinics, salons, workshops, trainers. A day view,
+      clash warnings, WhatsApp reminders, and "done" turns into an invoice.
+   3. Selling without internet: if the connection drops, sales, receipts
+      and new customers are kept on the device and sent when it's back.
+   ===================================================================== */
+Object.assign(L, {
+  // loyalty
+  loy:["نقاط الولاء","Loyalty points"], loySub:["الزبون بيجمع نقاط على مشترياته، وبيستخدمها خصم عند الكاشير.","Customers earn points on purchases and spend them as a discount at the till."],
+  loyOn:["شغّل نقاط الولاء","Turn on loyalty points"], loyPer:["نقاط لكل 1 {c}","Points per 1 {c}"], loyVal:["قيمة النقطة ({c})","Value of one point ({c})"], loyMin:["أقل عدد نقاط للاستخدام","Minimum points to redeem"],
+  loyEx:["مثال: زبون اشترى بـ 50 بياخد {p} نقطة = خصم {v} على مشترياته الجاية.","Example: a 50 purchase earns {p} points = {v} off next time."],
+  loyBal:["نقاطه: {n} (= {v})","Points: {n} (= {v})"], loyUse:["استخدم {n} نقطة · خصم {v}","Use {n} points · {v} off"], loyUsed:["خصم نقاط: {v}","Points discount: {v}"], loyCancel:["بلاش خصم النقاط","Don't use points"],
+  loyEarned:["كسب {n} نقطة على هالفاتورة","Earned {n} points on this invoice"], loySaved:["تمام، نقاط الولاء شغّالة","Loyalty points are on"], loyOff:["وقّف نقاط الولاء","Turn off loyalty points"],
+  // appointments
+  ap:["المواعيد","Appointments"], apNew:["موعد جديد","New appointment"], apWho:["الزبون","Customer"], apWhoName:["اسم الزبون","Customer name"], apPhone:["رقم الزبون","Customer phone"],
+  apSvc:["الخدمة","Service"], apSvcPh:["كشفية، قص شعر، صيانة…","Check-up, haircut, service…"], apTime:["الساعة","Time"], apDur:["المدة (دقيقة)","Length (minutes)"], apWith:["مع مين؟","With whom?"], apAny:["أي حدا","Anyone"],
+  apPrice:["السعر","Price"], apNote:["ملاحظة","Note"], apSaved:["انحجز الموعد","Appointment booked"], apNone:["ما في مواعيد بهاليوم.","No appointments this day."],
+  apDone:["خلص · اعمل فاتورة","Done · make invoice"], apNoShow:["ما إجا","No-show"], apCancel:["إلغاء الموعد","Cancel"], apRemind:["ذكّره واتساب","Remind on WhatsApp"],
+  apSt_booked:["محجوز","Booked"], apSt_done:["خلص","Done"], apSt_noshow:["ما إجا","No-show"], apSt_cancel:["ملغي","Cancelled"],
+  apClash:["انتبه: في موعد ثاني بنفس الوقت ({x})","Heads up: clashes with another appointment ({x})"], apToday:["مواعيد اليوم: {n}","Today's appointments: {n}"], apNext:["الجاي: {x} الساعة {t}","Next: {x} at {t}"],
+  apWa:["مرحبا {p}،\nتذكير بموعدك عند {co} يوم {d} الساعة {t}{s}.\nإذا بدك تغيّر الموعد احكيلنا. شكراً","Hello {p},\nA reminder of your appointment at {co} on {d} at {t}{s}.\nLet us know if you need to change it. Thank you"],
+  apNeedName:["اكتب اسم الزبون","Enter the customer's name"], apNeedDb:["المواعيد بدها تحديث بسيط بقاعدة البيانات. احكي مع الدعم.","Appointments need a small database update. Contact support."],
+  // offline
+  obSaved:["ما في إنترنت. انحفظت على الجهاز، وبتنرفع لحالها لما يرجع النت.","No internet. Saved on this device; it will upload when you're back online."],
+  obPending:["{n} بانتظار النت","{n} waiting for internet"], obSent:["رجع النت، وانرفع كل اللي كان محفوظ ({n})","Back online, uploaded {n} saved items"],
+});
+ICON.star = '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>';
+if(!COLS.includes("appointments")){ COLS.push("appointments"); S.appointments = S.appointments || []; }
+
+/* ===================== 1. loyalty ===================== */
+const LOY = () => { const l = (COMPANY && COMPANY.settings && COMPANY.settings.loyalty) || {}; return {on:!!l.on, per:num(l.per)||1, value:num(l.value)||0.01, min:Math.max(0, num(l.min))}; };
+/* points: earned on every live sale (on the amount before tax), returned on sale returns, spent when redeemed */
+function loyPoints(pid){
+  const p = partyById(pid); if(!p || p.walkIn || !LOY().on) return 0;
+  const per = LOY().per; let pts = 0;
+  liveInv().filter(x=>x.partyId===pid).forEach(x=>{ const net = invCalc(x).net;
+    if(x.type==="sale") pts += Math.floor(net*per) - num(x.redeem); else if(x.type==="saleReturn") pts -= Math.floor(net*per); });
+  return Math.max(0, pts);
+}
+const loyEarnedOn = x => x.type==="sale" && LOY().on && !(partyById(x.partyId)||{}).walkIn ? Math.floor(invCalc(x).net*LOY().per) : 0;
+/* what the cashier's "use points" button is worth on this sale (checked again at payment time) */
+function loyRedeemFor(pos){
+  if(!pos || !pos.redeem || !LOY().on || !pos.partyId) return {discount:0, redeem:0};
+  const l = LOY(), net = invCalc({lines:pos.lines, incTax:ST().incTax}).net, pts = Math.min(pos.redeem, loyPoints(pos.partyId), Math.floor(net/l.value));
+  return pts>0 ? {discount:r2(pts*l.value), redeem:pts} : {discount:0, redeem:0};
+}
+function loySheet(){
+  if(ROLE!=="owner"){ toast(t("onlyOwner")); return; }
+  const l = LOY(), c = curName();
+  openSheet({title:t("loy"), saveLabel:t("save"), html:`<p class="sub">${t("loySub")}</p>`,
+    fields:[{name:"on",label:t("loyOn"),type:"chips",options:[["1",t("yes")],["0",t("no")]],value:l.on?"1":"0"},
+      {name:"per",label:t("loyPer",{c}),type:"money",value:String(l.per)},{name:"value",label:t("loyVal",{c}),type:"money",value:String(l.value),hint:t("loyEx",{p:Math.floor(50*l.per), v:moneyTxt(Math.floor(50*l.per)*l.value)})},
+      {name:"min",label:t("loyMin"),type:"money",value:String(l.min||0)}],
+    submit: async v=>{ const loyalty = {on:v.on==="1", per:Math.max(0.01, Math.min(100, num(v.per)||1)), value:Math.max(0.0001, Math.min(100, num(v.value)||0.01)), min:Math.max(0, num(v.min))};
+      const ok = await applySettings({settings:{...(COMPANY.settings||{}), loyalty}}); if(ok) toast(t("loySaved")); return ok; }});
+}
+/* POS: offer the customer's points as a discount */
+const _posRender0 = posRender;
+posRender = function(){
+  _posRender0();
+  if(!POS || !LOY().on || !POS.partyId) return;
+  const pts = loyPoints(POS.partyId), l = LOY(), box = document.querySelector("#sheetBody .kv"); if(!box) return;
+  const total = invCalc({lines:POS.lines, incTax:ST().incTax}).net, maxPts = Math.min(pts, Math.floor(total/l.value)), val = r2(maxPts*l.value);
+  let h = `<div class="loy-line">${icon("star")}<span>${t("loyBal",{n:`<b class="num">${fmt(pts)}</b>`, v:money(pts*l.value)})}</span></div>`;
+  if(POS.redeem) h += `<div class="loy-line"><span class="pos">${t("loyUsed",{v:money(r2(POS.redeem*l.value))})}</span><button type="button" class="linkbtn" data-act="loyRedeem" data-id="0">${t("loyCancel")}</button></div>`;
+  else if(maxPts>0 && pts>=l.min && POS.lines.length) h += `<button type="button" class="btn sm" data-act="loyRedeem" data-id="${maxPts}">${icon("star")}${t("loyUse",{n:fmt(maxPts), v:moneyTxt(val)})}</button>`;
+  box.insertAdjacentHTML("beforebegin", h);
+  if(POS.redeem){ const c = invCalc({lines:POS.lines, incTax:ST().incTax, discount:r2(POS.redeem*l.value)}), tot = document.querySelector("#sheetBody .total b"); if(tot) tot.innerHTML = money(c.total);
+    document.querySelectorAll('#sheetBody [data-act="posPay"][data-id="cash"]').forEach(b=>b.innerHTML = `${icon("wallet")}${t("cash")} · ${fmt(c.total)}`); }
+};
+/* ===================== 2. appointments ===================== */
+const AP_ST = ["booked","done","noshow","cancel"];
+const apOn = d => S.appointments.filter(a=>a.date===d && a.status!=="cancel").sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+const apName = a => (a.partyId && partyById(a.partyId) ? partyById(a.partyId).name : a.name) || "";
+const apPhone = a => (a.partyId && partyById(a.partyId) ? partyById(a.partyId).phone : a.phone) || "";
+const apEnd = a => (mins(a.time)||0) + Math.max(5, num(a.dur)||30);
+function apClash(a, ignoreId){
+  return S.appointments.find(b=>b.id!==ignoreId && b.date===a.date && b.status!=="cancel" && b.status!=="noshow" && (!a.staffId || !b.staffId || a.staffId===b.staffId)
+    && (mins(a.time)||0) < apEnd(b) && (mins(b.time)||0) < apEnd(a));
+}
+function apSheet(date){
+  S.apDate = date || S.apDate || today();
+  const d = S.apDate, list = S.appointments.filter(a=>a.date===d).sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+  const row = a => `<div class="row static ap-row ${a.status!=="booked"?"ap-"+a.status:""}"><span class="ap-t num ltr">${esc(a.time||"")}</span>
+    <div class="m"><b>${esc(apName(a))}</b><span class="sub">${esc(a.svc||"")}${a.staffId&&staffById(a.staffId)?" · "+esc(staffById(a.staffId).name):""}${num(a.price)?" · "+money(num(a.price)):""}</span></div>
+    <div class="col end"><span class="pill ${a.status==="done"?"good":a.status==="booked"?"":"bad"}">${t("apSt_"+a.status)}</span>
+    ${a.status==="booked"?`<div class="ap-acts"><button type="button" class="linkbtn" data-act="apDone" data-id="${esc(a.id)}">${t("apDone")}</button><button type="button" class="linkbtn" data-act="apWa" data-id="${esc(a.id)}">${t("apRemind")}</button><button type="button" class="linkbtn" data-act="apEdit" data-id="${esc(a.id)}">${t("edit")}</button></div>`:""}</div></div>`;
+  openSheet({title:t("ap"), noSave:true, html:`<div class="daybar"><button type="button" class="iconbtn" data-act="apDay" data-id="1" aria-label="+1">${icon("chevE")}</button><b>${fdate(d)}</b><button type="button" class="iconbtn" data-act="apDay" data-id="-1" aria-label="-1">${icon("chevS")}</button></div>
+    <button type="button" class="btn primary" data-act="apNew">${icon("plus")}${t("apNew")}</button>
+    ${list.length ? `<div class="list">${list.map(row).join("")}</div>` : `<span class="hint">${t("apNone")}</span>`}`});
+}
+function apForm(a){
+  const custs = S.parties.filter(p=>!p.archived && !p.walkIn && p.kind!=="supplier").sort((x,y)=>String(x.name).localeCompare(String(y.name)));
+  const staff = S.staff.filter(s=>s.active!==false);
+  openSheet({title: a ? t("edit") : t("apNew"), saveLabel: a ? t("save") : t("apNew"),
+    fields:[...(custs.length?[{name:"partyId",label:t("apWho"),type:"select",options:[["",t("apWhoName")+" ↓"],...custs.map(p=>[p.id,p.name])],value:a?.partyId||""}]:[]),
+      {name:"name",label:t("apWhoName"),value:a?.name||"",max:80},{name:"phone",label:t("apPhone"),type:"tel",value:a?.phone||"",max:30},
+      {name:"svc",label:t("apSvc"),value:a?.svc||"",max:80,ph:t("apSvcPh")},
+      {name:"date",label:t("date"),type:"date",value:a?.date||S.apDate||today()},{name:"time",label:t("apTime"),type:"time",value:a?.time||"10:00"},
+      {name:"price",label:t("apPrice"),type:"money",value:a?.price||""}],
+    more:[{name:"dur",label:t("apDur"),type:"chips",options:[["15","15"],["30","30"],["45","45"],["60","60"],["90","90"],["120","120"]],value:String(a?.dur||30)},
+      ...(staff.length?[{name:"staffId",label:t("apWith"),type:"select",options:[["",t("apAny")],...staff.map(s=>[s.id,s.name])],value:a?.staffId||""}]:[]),
+      {name:"note",label:t("apNote"),value:a?.note||"",max:160}],
+    del: a ? {label:t("apCancel"), run:()=>save("appointments", a.id, {...strip(a), status:"cancel"})} : null,
+    submit: async v=>{
+      const pid = partyById(v.partyId) ? v.partyId : "";
+      if(!pid && !v.name){ toast(t("apNeedName")); return false; }
+      const data = {...(a?strip(a):{createdAt:Date.now(), status:"booked"}), partyId:pid, name:(v.name||"").slice(0,80), phone:(v.phone||"").slice(0,30), svc:(v.svc||"").slice(0,80),
+        date:validDate(v.date)?v.date:today(), time:mins(v.time)!=null?v.time:"10:00", dur:Math.max(5, Math.min(600, parseInt(v.dur)||30)), staffId:staffById(v.staffId)?v.staffId:"", price:num(v.price), note:(v.note||"").slice(0,160)};
+      const c = apClash(data, a?.id); if(c) toast(t("apClash",{x:`${apName(c)} ${c.time}`}));
+      const ok = await save("appointments", a?.id || null, data, true);
+      if(!ok){ toast(t("apNeedDb")); return false; }
+      if(!c) toast(t("apSaved")); setTimeout(()=>apSheet(data.date), 30); return true; }});
+}
+function apHomeCard(){
+  const list = apOn(today()).filter(a=>a.status==="booked"); if(!list.length) return "";
+  const now = new Date().toTimeString().slice(0,5), next = list.find(a=>a.time>=now) || list[0];
+  return `<button class="panel grow push-card ap-card" data-act="appts"><span class="tx-ic">${icon("calendar")}</span><div class="col"><b>${t("apToday",{n:list.length})}</b><span class="sub">${esc(t("apNext",{x:apName(next), t:next.time}))}</span></div></button>`;
+}
+
+/* ===================== 3. offline outbox ===================== */
+const OUTBOX_COLS = ["invoices","vouchers","parties","appointments","expenses","income","attendance","payments"];
+const obKey = () => "outbox_"+CID;
+const obList = () => lsGet(obKey(), []);
+const netDown = e => !navigator.onLine || /fetch|network|load failed|timeout|offline/i.test(String((e && (e.message||e.details)) || e || ""));
+function outboxTake(col, id, data, err){
+  if(!CID || !OUTBOX_COLS.includes(col) || !netDown(err)) return false;
+  const q = obList().filter(x=>!(x.col===col && x.id===id)); q.push({col, id, data}); lsSet(obKey(), q.slice(-500));
+  toast(t("obSaved")); obBadge(); return true;
+}
+let obBusy = false;
+async function outboxFlush(){
+  if(obBusy || !CID || !navigator.onLine) return; const q = obList(); if(!q.length){ obBadge(); return; }
+  obBusy = true; let sent = 0;
+  try{
+    const { error } = await sb.from("records").upsert(q.map(x=>({company_id:CID, col:x.col, id:x.id, data:x.data})), {onConflict:"company_id,col,id"});
+    if(!error){ sent = q.length; const rest = obList().filter(x=>!q.some(y=>y.col===x.col && y.id===x.id && JSON.stringify(y.data)===JSON.stringify(x.data))); lsSet(obKey(), rest); }
+  }catch(e){} finally{ obBusy = false; }
+  obBadge(); if(sent) toast(t("obSent",{n:sent}));
+}
+function obBadge(){
+  const n = CID ? obList().length : 0; let el = document.getElementById("obBadge");
+  if(!n){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement("button"); el.id = "obBadge"; el.type = "button"; el.className = "ob-badge"; el.addEventListener("click", outboxFlush); document.body.appendChild(el); }
+  el.textContent = t("obPending",{n});
+}
+/* a full reload must not hide what is still waiting on this device */
+const _loadAllOb = loadAll;
+loadAll = async function(){
+  if(!navigator.onLine && S.ready) return false;   // keep working with what's on screen
+  const ok = await _loadAllOb(); if(ok && CID) obList().forEach(x=>applyLocal(x.col, x.id, x.data)); obBadge(); return ok;
+};
+window.addEventListener("online", ()=>{ outboxFlush().then(()=>{ if(CID) loadAll().then(render); }); });
+setInterval(()=>{ if(CID && navigator.onLine && obList().length) outboxFlush(); }, 30000);
+
+/* ---------- entry points ---------- */
+const _accountSheetM = accountSheet;
+accountSheet = function(){
+  _accountSheetM();
+  const menu = document.querySelector("#sheetBody .menu"); if(!menu) return;
+  const push = menu.querySelector('[data-act="push"]');
+  const extra = `<button type="button" class="mi" data-act="appts">${icon("calendar")}${t("ap")}</button>${ROLE==="owner"?`<button type="button" class="mi" data-act="loySet">${icon("star")}${t("loy")}</button>`:""}`;
+  if(push) push.insertAdjacentHTML("afterend", extra); else menu.insertAdjacentHTML("afterbegin", extra);
+};
+const _viewPartySheetM = viewPartySheet;
+viewPartySheet = function(id){
+  _viewPartySheetM(id); const p = partyById(id); if(!p || !LOY().on || p.kind==="supplier") return;
+  const pts = loyPoints(id), owe = document.querySelector("#sheetBody .owe");
+  if(owe) owe.insertAdjacentHTML("afterend", `<div class="loy-line">${icon("star")}<span>${t("loyBal",{n:`<b class="num">${fmt(pts)}</b>`, v:money(pts*LOY().value)})}</span></div>`);
+};
+const _viewInvSheetM = viewInvSheet;
+viewInvSheet = function(id){
+  _viewInvSheetM(id); const x = invById(id); if(!x) return; const n = loyEarnedOn(x);
+  if(n>0){ const tot = document.querySelector("#sheetBody .total"); if(tot) tot.insertAdjacentHTML("afterend", `<div class="loy-line">${icon("star")}<span>${t("loyEarned",{n:fmt(n)})}${x.redeem?" · "+t("loyUsed",{v:money(num(x.discount))}):""}</span></div>`); }
+};
+Object.assign(A, {
+  loySet: () => { closeSheet(); loySheet(); },
+  loyRedeem: id => { if(!POS) return; POS.redeem = Number(id)||0; posRender(); },
+  appts: () => { closeSheet(); apSheet(today()); },
+  apDay: id => apSheet(addDays(S.apDate||today(), Number(id))),
+  apNew: () => { closeSheet(); apForm(null); },
+  apEdit: id => { const a = S.appointments.find(x=>x.id===id); if(a){ closeSheet(); apForm(a); } },
+  apWa: id => { const a = S.appointments.find(x=>x.id===id); if(!a) return;
+    openWaText(apPhone(a), t("apWa",{p:apName(a), co:COMPANY.name||"", d:fdate(a.date), t:a.time, s:a.svc?` (${a.svc})`:""})); },
+  apDone: async id => { const a = S.appointments.find(x=>x.id===id); if(!a) return;
+    if(!await save("appointments", id, {...strip(a), status:"done"}, true)) return;
+    let pid = a.partyId; if(!pid){ pid = newId(); await save("parties", pid, {name:a.name, phone:a.phone||"", kind:"customer", openBal:0, createdAt:Date.now()}, true); await save("appointments", id, {...strip(S.appointments.find(x=>x.id===id)), partyId:pid}, true); }
+    closeSheet(); invForm(null, {type:"sale", partyId:pid, lines:[{name:a.svc||t("ap"), qty:1, price:num(a.price)||"", tax:taxRate()}], notes:a.note||""}); },
+  apNoShow: async id => { const a = S.appointments.find(x=>x.id===id); if(a && await save("appointments", id, {...strip(a), status:"noshow"}, true)) apSheet(a.date); },
+});
+document.addEventListener("change", e=>{
+  // picking a customer fills the name and phone, so the reminder knows where to go
+  if(e.target.id==="f_partyId" && document.getElementById("f_svc")){ const p = partyById(e.target.value); if(p){ const n = document.getElementById("f_name"), ph = document.getElementById("f_phone"); if(n) n.value = p.name; if(ph && p.phone) ph.value = p.phone; } }
+  if(e.target.id==="posCust" && POS){ POS.redeem = 0; posRender(); }
 });

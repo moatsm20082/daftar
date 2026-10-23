@@ -16,7 +16,7 @@
   var ref = "direct";
   try { if (document.referrer) { var h = new URL(document.referrer).hostname; if (h !== location.hostname) ref = h.replace(/^www\./, "").replace(/^l\./, "").replace(/^lm\./, "").replace(/^m\./, ""); } } catch (e) {}
   try { var u = new URLSearchParams(location.search).get("from") || new URLSearchParams(location.search).get("utm_source"); if (u) ref = u.toLowerCase().slice(0, 40); } catch (e) {}
-  var page = /\/get\/?/.test(location.pathname) ? "get" : "app";
+  var page = /^\/app\//.test(location.pathname) ? "app" : "get";   // the site (/, /get/, tools…) vs the app
   window.dtrack = function (type) {
     try {
       fetch(C.SUPABASE_URL + "/rest/v1/rpc/log_site_event", {
