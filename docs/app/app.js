@@ -3350,6 +3350,62 @@ Object.assign(A, {
   pushStop: async () => { await pushDisable(); toast(t("pushStopped")); closeSheet(); pushSheet(); },
   pushTest: async () => { try{ const { error } = await sb.functions.invoke("push", {body:{mode:"test"}}); toast(error ? t("pushFail") : t("pushSent")); }catch(e){ toast(t("pushFail")); } },
 });
+
+/* ===== v15: everyone signed in turns notifications on with one tap =====
+   Shown on entering the app while the browser hasn't been asked yet. One big button opens the
+   phone's own "Allow" prompt; nothing to do in phone settings. If they already allowed it on this
+   device (new phone, cleared data), we subscribe silently. If they said no in the phone prompt,
+   the browser won't let us ask again, so we don't block them: a short reminder every few days. */
+Object.assign(L, {
+  pgTitle:["شغّل إشعارات دفتر","Turn on Daftar notifications"],
+  pgSub:["كبسة وحدة، وبيوصلك على تلفونك:","One tap, and you'll get on your phone:"],
+  pg1:["رد فريق الدعم أول ما يردّوا عليك","The support team's reply as soon as they answer"],
+  pg2:["ملخص يومك كل مسا: الدوام، شو دخل وشو طلع","Your daily summary every evening: attendance, money in and out"],
+  pg3:["الشيكات والفواتير المستحقة قبل موعدها","Cheques and invoices before they're due"],
+  pg4:["كل جديد بدفتر","Everything new in Daftar"],
+  pgBtn:["اسمح بالإشعارات","Allow notifications"], pgHint:["بيطلعلك سؤال من التلفون، اضغط «سماح» أو «Allow».","Your phone will ask: tap “Allow”."],
+  pgOk:["تمام ✓ الإشعارات شغّالة","Done ✓ Notifications are on"],
+  pgDenied:["الإشعارات مسكّرة على هالتلفون. عشان تشغّلها: افتح إعدادات المتصفح أو التطبيق ← الإشعارات ← اسمح لـ daftarapp.co.","Notifications are blocked on this phone. To turn them on: browser or app settings → Notifications → allow daftarapp.co."],
+  pgLater:["كمّل","Continue"],
+});
+const pushGateEl = (() => { const d = document.createElement("div"); d.id = "pushGate"; d.className = "push-gate"; d.hidden = true; document.body.appendChild(d); return d; })();
+let pushGateBusy = false, pushGateDone = false;
+function pushGateShow(denied){
+  pushGateEl.innerHTML = `<div class="pg-card" role="dialog" aria-modal="true" aria-labelledby="pgT">
+    <span class="pg-ic">${icon("bell","big")}</span><h2 id="pgT">${t("pgTitle")}</h2>
+    ${denied ? `<p class="sub">${t("pgDenied")}</p><button type="button" class="btn big" data-act="pushGateClose">${t("pgLater")}</button>`
+      : `<p class="sub">${t("pgSub")}</p><ul class="pg-list">${["pg1","pg2","pg3","pg4"].map(k=>`<li>${icon("check")}<span>${t(k)}</span></li>`).join("")}</ul>
+         <button type="button" class="btn primary big" data-act="pushGateGo" id="pgGo">${icon("bell")}${t("pgBtn")}</button><span class="hint">${t("pgHint")}</span>`}</div>`;
+  pushGateEl.hidden = false; document.body.classList.add("pg-open");
+}
+function pushGateHide(){ pushGateEl.hidden = true; document.body.classList.remove("pg-open"); pushGateDone = true; }
+async function pushGateCheck(){
+  if(pushGateDone || pushGateBusy || window.DEMO_MODE || !pushOk() || typeof S==="undefined" || S.screen!=="app" || !S.ready || !CID) return;
+  pushGateBusy = true;
+  try{
+    const perm = Notification.permission;
+    if(perm==="granted"){ // allowed before: make sure this device is subscribed, silently
+      if(!(await pushCurrent())) await pushEnable({morning:true, evening:true, news:true});
+      pushGateDone = true; return;
+    }
+    if(perm==="default"){ pushGateShow(false); return; }
+    // denied: remind at most every 3 days, never block
+    const last = Number(lsGet("pgDeniedAt",0)) || 0;
+    if(Date.now()-last > 3*864e5){ lsSet("pgDeniedAt", Date.now()); pushGateShow(true); } else pushGateDone = true;
+  } finally { pushGateBusy = false; }
+}
+setInterval(pushGateCheck, 1500);
+Object.assign(A, {
+  pushGateGo: async () => {
+    const b = document.getElementById("pgGo"); if(b) b.disabled = true;
+    const ok = await pushEnable({morning:true, evening:true, news:true});
+    lsSet("pushAsked", 1); lsSet("supPushAsked", 1);
+    if(ok){ pushGateHide(); toast(t("pgOk")); render(); return; }
+    if(Notification.permission==="denied"){ lsSet("pgDeniedAt", Date.now()); pushGateShow(true); return; }
+    pushGateHide();   // the phone prompt was dismissed: ask again next time the app opens
+  },
+  pushGateClose: () => pushGateHide(),
+});
 /* =====================================================================
    Shop & growth tools:
    1. Barcodes: USB/Bluetooth scanners, phone camera, printable labels

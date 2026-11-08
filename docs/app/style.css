@@ -560,3 +560,14 @@ button.ap-card{width:100%;text-align:start;cursor:pointer}
 .bot-acts .btn{min-height:36px}
 .sup-push{align-items:center;flex-wrap:wrap;margin:0 0 4px}
 .sup-push span{flex:1;min-width:180px}
+/* v15: notifications gate */
+.push-gate{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg,#0A1330) 82%,transparent);backdrop-filter:blur(6px)}
+.push-gate[hidden]{display:none}
+.pg-card{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:24px 20px;display:flex;flex-direction:column;gap:12px;align-items:stretch;text-align:center;box-shadow:0 30px 70px -30px rgba(0,0,0,.5)}
+.pg-card h2{margin:0;font-size:1.35rem}
+.pg-ic{align-self:center;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--surface-3);color:var(--brand-text)}
+.pg-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;text-align:start}
+.pg-list li{display:flex;gap:10px;align-items:flex-start;font-size:.95rem}
+.pg-list li svg{flex:none;color:var(--good,#1a9e5f);margin-top:3px}
+.pg-card .hint{font-size:.82rem}
+body.pg-open{overflow:hidden}
