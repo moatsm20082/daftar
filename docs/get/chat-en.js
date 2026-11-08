@@ -3,7 +3,7 @@ window.DaftarChatEN = {
   ui: {
     title: "Daftar assistant", sub: "Ask anything about the app", close: "Close", placeholder: "Type your question…", send: "Ask",
     hello: "Hi! I'm the Daftar assistant. Ask me anything: price, features, installing, or moving your data from another app.",
-    fallback: "Sorry, I didn't quite get that. Try asking another way, pick one of these, or email [hello@daftarapp.co](mailto:hello@daftarapp.co).",
+    fallback: "Sorry, I didn't quite get that. Try asking another way, pick one of these, or email [daftarapp.jo@gmail.com](mailto:daftarapp.jo@gmail.com).",
     offtopic: "I only answer questions about Daftar. Ask me about price, features, installing, or moving your data.",
   },
   label: { price: "Is it free?", what: "What does it do?", who: "Does it fit my business?", start: "How do I sign up?", install: "How do I install it?", android: "On Android", iphone: "On iPhone", pc: "On a computer",
@@ -140,7 +140,7 @@ window.DaftarChatEN = {
     multico: "Each account has one company. For another company, sign up with another email. If you have branches or projects in the same company, open a folder for each.",
     calculators: "We have free calculators (in Arabic): [salary](/tools/salary/), [income tax](/tools/income-tax/), [social security](/tools/social-security/), [end of service](/tools/end-of-service/), [sales tax](/tools/vat/), [profit margin](/tools/profit-margin/), [annual leave](/tools/annual-leave/) and [driver profit](/tools/driver/).",
     compare: "Daftar is completely free, in Arabic and English, on phone and computer, with things of its own: the cash radar that warns you before a shortfall, daily worker attendance for contractors and workshops, and moving from any app in minutes.",
-    support: "Email us at [hello@daftarapp.co](mailto:hello@daftarapp.co), or use the support button inside the app, and we'll get back to you as soon as we can.",
+    support: "Email us at [daftarapp.jo@gmail.com](mailto:daftarapp.jo@gmail.com), or use the support button inside the app, and we'll get back to you as soon as we can.",
     delete: "The company owner can delete the company account from the account menu → \"Delete business account\". It's permanent, so export an Excel copy first.",
     settings: "From the account menu → \"Settings\" (company owner): name, line of business, currency, language, days off, working hours, tax number and address, tax rate, print paper, and social security rates.",
     made: "Daftar is a Jordanian idea, made in Jordan. It was born on a building site from one question: how much did this project really cost us?",

@@ -140,8 +140,9 @@ Object.assign(L, {
   codeLabel:["الرمز","Code"], codeGo:["تأكيد","Confirm"], codeBad:["الرمز غلط أو انتهى. جرّب مرة ثانية أو اطلب رمز جديد.","Wrong or expired code. Try again or ask for a new one."],
   codeShort:["الرمز لازم يكون أرقام بس (6 أو أكثر).","The code is digits only (6 or more)."], sendCode:["ابعتلي رمز","Send me a code"],
   codeTip:["الإيميل بيوصل خلال دقيقة. إذا ما لقيته، شوف مجلد الـ Spam.","It arrives within a minute. Not there? Check Spam."],
-  gateTitle:["دفتر بيشتغل كتطبيق","Daftar runs as an app"], gateSub:["نزّله على شاشتك ببلاش وبدقيقة، وبيفتح مثل أي تطبيق.","Add it to your home screen in a minute, free. It opens like any app."],
-  gateInstall:["ثبّت دفتر الآن","Install Daftar now"], gateHow:["شوف طريقة التنزيل بالفيديو","Watch how to install"], gateWeb:["كمّل من المتصفح","Continue in the browser"],
+  gateTitle:["نزّل تطبيق دفتر","Get the Daftar app"], gateSub:["دفتر بيشتغل كتطبيق على جهازك بس. نزّله ببلاش وبدقيقة، وبيفتح مثل أي تطبيق.","Daftar works only as an app on your device. Install it free in a minute; it opens like any app."],
+  gateInstall:["ثبّت دفتر الآن","Install Daftar now"], gateHow:["شوف طريقة التنزيل بالفيديو","Watch how to install"], gateApk:["نزّل تطبيق دفتر للأندرويد","Download the Daftar Android app"], gatePc1:["اضغط «ثبّت دفتر الآن»، أو أيقونة التثبيت بشريط العنوان فوق.","Click \"Install Daftar now\", or the install icon in the address bar."], gatePc2:["دفتر بيفتح بنافذة لحاله، وبتلاقيه بقائمة البرامج.","Daftar opens in its own window and appears in your apps."],
+  gateMac1:["من قائمة File اختار «Add to Dock».","From the File menu choose \"Add to Dock\"."], gatePcBrowser:["هالمتصفح ما بيثبّت التطبيقات. افتح daftarapp.co/app بـ Chrome أو Edge وثبّته من هناك.","This browser can't install apps. Open daftarapp.co/app in Chrome or Edge and install it from there."],
   gateIos1:["اضغط زر المشاركة تحت (مربع وسهم لفوق).","Tap the Share button (square with an arrow)."], gateIos2:["اختار \"إضافة إلى الشاشة الرئيسية\".","Choose \"Add to Home Screen\"."], gateIos3:["اضغط \"إضافة\"، وافتح دفتر من الأيقونة.","Tap \"Add\", then open Daftar from the icon."],
   gateSafari:["على الآيفون لازم تفتح هالصفحة من Safari.","On iPhone, open this page in Safari."],
   gateAnd1:["اضغط \"ثبّت دفتر الآن\"، أو من القائمة ⋮ اختار \"تثبيت التطبيق\".","Tap \"Install Daftar now\", or ⋮ → \"Install app\"."], gateAnd2:["افتح دفتر من الأيقونة على شاشتك.","Open Daftar from the icon on your screen."],
@@ -1326,28 +1327,37 @@ async function purgeAllFiles(){
 }
 /* ===== support: write to the Daftar team, see their replies ===== */
 const chatEl = document.getElementById("chat");
-function openChat(mode){ S.chat.open = true; S.chat.mode = mode || (S.chat.unread ? "tickets" : "new"); S.chat.tid = null; chatEl.hidden = false; renderChat();
-  if(CID) loadMyTickets(); }
+function openChat(mode){ S.chat.open = true; S.chat.mode = mode || (S.chat.unread ? "tickets" : "ask"); S.chat.tid = null; chatEl.hidden = false;
+  if(typeof botStart==="function") botStart(); renderChat();
+  if(CID) loadMyTickets(); setTimeout(()=>{ const i = document.getElementById("botInput"); if(i && window.innerWidth > 700) i.focus(); }, 80); }
 function closeChat(){ S.chat.open = false; chatEl.hidden = true; if(S.screen==="app") render(); }
 function md(s){ // tiny, safe formatting: escape first, then **bold** and line breaks
   return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/^(\d+)\.\s/gm,'<span class="num">$1.</span> ').replace(/\n/g,"<br>"); }
 function renderChat(){
   if(!S.chat.open) return;
   const c = S.chat, signed = !!CID;
+  if(c.mode==="ai") c.mode = "ask";
+  if(!signed && (c.mode==="new" || c.mode==="tickets")) c.mode = "human";
   let body;
-  if(!signed) body = humanPane();
+  if(c.mode==="ask" && typeof botPane==="function") body = botPane();
+  else if(!signed) body = humanPane();
   else if(c.tid || c.mode==="tickets") body = ticketsPane();
   else body = newTicketPane();
+  const tabs = signed
+    ? [["ask","botTab"],["new","botTeamTab"],["tickets","myTickets"]]
+    : [["ask","botTab"],["human","botTeamTab"]];
   chatEl.innerHTML = `<div class="chat-back" data-act="closeChat"></div><section class="chat-panel" role="dialog" aria-label="${t("supTitle")}">
     <header class="chat-head"><span class="chat-logo">${MARK}</span><div class="col"><b>${t("supTitle")}</b><span class="sub">${t("supSubHuman")}</span></div><button class="iconbtn" data-act="closeChat" aria-label="${t("close")}">${icon("x")}</button></header>
-    ${signed?`<div class="seg two-seg chat-tabs"><button data-act="chatMode" data-id="new" aria-pressed="${c.mode!=="tickets"}">${t("newMsg")}</button><button data-act="chatMode" data-id="tickets" aria-pressed="${c.mode==="tickets"}">${t("myTickets")}${c.unread?'<i class="dot"></i>':""}</button></div>`:""}
+    <div class="seg ${tabs.length===3?"three-seg":"two-seg"} chat-tabs">${tabs.map(([k,l])=>`<button data-act="chatMode" data-id="${k}" aria-pressed="${c.mode===k || (k==="tickets" && !!c.tid)}">${t(l)}${k==="tickets"&&c.unread?'<i class="dot"></i>':""}</button>`).join("")}</div>
     ${body}</section>`;
   const m = document.getElementById("msgs"); if(m) m.scrollTop = m.scrollHeight;
 }
 function newTicketPane(){
+  if(window.DEMO_MODE) return `<div class="msgs"><div class="empty">${icon("chat","big")}<span>${t("demoNoTeam")}</span><a class="btn primary" href="${LANG==="en"?"/en/":"/"}#download">${t("demoGet")}</a></div></div>`;
   return `<form class="human" id="newTicketForm" novalidate><b>${t("supAsk")}</b><span class="sub">${t("supAskSub")}</span>
     <div class="sugg flat">${["sq1","sq2","sq3","sq4"].map(k=>`<button type="button" class="chip-btn" data-act="supTopic" data-id="${k}">${t(k)}</button>`).join("")}</div>
-    <div class="field"><label for="nt_msg">${t("yourMsg")}</label><textarea id="nt_msg" name="msg" rows="5" maxlength="1500"></textarea></div>
+    <div class="field"><label for="nt_msg">${t("yourMsg")}</label><textarea id="nt_msg" name="msg" rows="5" maxlength="1500">${esc(S.chat.draft||"")}</textarea></div>
+    ${S.chat.carry && (S.chat.bot||[]).length>1 ? `<span class="hint">${t("botCarry")}</span>` : ""}
     <button class="btn primary" type="submit">${icon("send")}${t("sendTeam")}</button><span class="hint">${t("supReplyTime")}</span></form>`;
 }
 function msgBubble(m){
@@ -1358,7 +1368,7 @@ function humanPane(){
   return `<form class="human" id="humanForm" novalidate><b>${t("humanForm")}</b>
     <div class="field"><label for="h_name">${t("yourName")}</label><input id="h_name" name="name" maxlength="80"></div>
     <div class="field"><label for="h_contact">${t("contactField")}</label><input id="h_contact" name="contact" maxlength="120" dir="ltr"></div>
-    <div class="field"><label for="h_msg">${t("yourMsg")}</label><textarea id="h_msg" name="msg" rows="4" maxlength="1500"></textarea></div>
+    <div class="field"><label for="h_msg">${t("yourMsg")}</label><textarea id="h_msg" name="msg" rows="4" maxlength="1500">${esc(S.chat.draft||"")}</textarea></div>
     <button class="btn primary" type="submit">${t("sendTeam")}</button><span class="hint">${t("supReplyTime")}</span></form>`;
 }
 function ticketsPane(){
@@ -1366,10 +1376,12 @@ function ticketsPane(){
   if(c.tid){ const tk = (c.tickets||[]).find(x=>x.id===c.tid); if(!tk) { c.tid = null; return ticketsPane(); }
     return `<div class="msgs" id="msgs"><div class="t-head"><button class="linkbtn" data-act="ticketBack">${icon(LANG==="en"?"chevE":"chevS")}${t("back")}</button><span class="pill ${tk.status==="answered"?"good":tk.status==="closed"?"":"warn"}">${t("tStatus_"+tk.status)}</span></div>
       ${(tk.messages||[]).map(m=>msgBubble({role:m.role==="ai"?"assistant":m.role, text:m.text})).join("")}</div>
+      ${tk.status==="open" && typeof pushNudge==="function" ? pushNudge() : ""}
       ${tk.status!=="closed"?`<form class="composer" id="ticketForm"><textarea id="ticketInput" rows="1" maxlength="1500" placeholder="${esc(t("replyPh"))}"></textarea><button class="send" type="submit" aria-label="${t("send")}">${icon("send")}</button></form>`:""}`; }
   if(!c.tickets) return `<div class="msgs"><div class="empty">${t("loading")}</div></div>`;
+  const nudge = c.tickets.some(x=>x.status==="open") && typeof pushNudge==="function" ? pushNudge() : "";
   if(!c.tickets.length) return `<div class="msgs"><div class="empty">${icon("chat","big")}<span>${t("noTickets")}</span><button class="btn" data-act="chatMode" data-id="new">${t("newMsg")}</button></div></div>`;
-  return `<div class="msgs"><div class="list">${c.tickets.map(tk=>`<button class="row" data-act="openTicket" data-id="${esc(tk.id)}"><div class="m"><b>${esc(tk.subject||"—")}</b><span class="sub">${fdate(String(tk.updated_at).slice(0,10))}</span></div><span class="pill ${tk.status==="answered"?"good":tk.status==="closed"?"":"warn"}">${t("tStatus_"+tk.status)}</span></button>`).join("")}</div></div>`;
+  return `<div class="msgs">${nudge}<div class="list">${c.tickets.map(tk=>`<button class="row" data-act="openTicket" data-id="${esc(tk.id)}"><div class="m"><b>${esc(tk.subject||"—")}</b><span class="sub">${fdate(String(tk.updated_at).slice(0,10))}</span></div><span class="pill ${tk.status==="answered"?"good":tk.status==="closed"?"":"warn"}">${t("tStatus_"+tk.status)}</span></button>`).join("")}</div></div>`;
 }
 async function loadMyTickets(){
   if(!sb || !USER) return;
@@ -1385,17 +1397,19 @@ function markTicketsSeen(){ if(USER){ lsSet("ticketsSeen_"+USER.id, new Date().t
 document.addEventListener("submit", async e=>{
   if(e.target.id==="newTicketForm"){ e.preventDefault(); const i = document.getElementById("nt_msg"), v = i.value.trim(); if(v.length<3){ toast(t("yourMsg")); return; }
     const b = e.target.querySelector('[type="submit"]'); b.disabled = true;
-    const { error } = await sb.rpc("open_ticket", {p_subject:v.slice(0,150), p_messages:[{role:"user", text:v.slice(0,1500)}]});
+    const pre = S.chat.carry && typeof botTranscript==="function" ? botTranscript() : [];
+    const { error } = await sb.rpc("open_ticket", {p_subject:v.slice(0,150), p_messages:[...pre.slice(-12), {role:"user", text:v.slice(0,1500)}]});
     b.disabled = false;
     if(error){ toast(/too many/i.test(error.message||"") ? t("eTooMany") : t("eGeneric")); return; }
+    S.chat.draft = ""; S.chat.carry = false; if(typeof pingPush==="function") pingPush();
     toast(t("humanSent")); await loadMyTickets(); S.chat.mode = "tickets"; S.chat.tid = (S.chat.tickets&&S.chat.tickets[0]||{}).id || null; renderChat(); }
   if(e.target.id==="ticketForm"){ e.preventDefault(); const i = document.getElementById("ticketInput"), v = i.value.trim(); if(!v) return;
-    const { error } = await sb.rpc("ticket_reply", {p_id:S.chat.tid, p_text:v.slice(0,1500)}); if(error){ toast(t("eGeneric")); return; } i.value = ""; await loadMyTickets(); }
+    const { error } = await sb.rpc("ticket_reply", {p_id:S.chat.tid, p_text:v.slice(0,1500)}); if(error){ toast(t("eGeneric")); return; } i.value = ""; if(typeof pingPush==="function") pingPush(); await loadMyTickets(); }
   if(e.target.id==="humanForm"){ e.preventDefault(); const f = new FormData(e.target), name = String(f.get("name")||"").trim(), contact = String(f.get("contact")||"").trim(), msg = String(f.get("msg")||"").trim();
     if(contact.length<5){ toast(t("eContact")); return; } if(msg.length<3){ toast(t("yourMsg")); return; }
     const { error } = await sb.rpc("open_public_ticket", {p_name:name, p_contact:contact, p_message:msg});
     if(error){ toast(/too many/i.test(error.message||"") ? t("eTooMany") : t("eGeneric")); return; }
-    e.target.reset(); toast(t("humanSentAnon")); }
+    e.target.reset(); S.chat.draft = ""; toast(t("humanSentAnon")); if(typeof pingPush==="function") pingPush(); }
 });
 document.addEventListener("keydown", e=>{ if(e.target.id==="ticketInput" && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); e.target.form.requestSubmit(); } });
 document.addEventListener("input", e=>{ if(e.target.id==="ticketInput"){ e.target.style.height = "auto"; e.target.style.height = Math.min(140, e.target.scrollHeight)+"px"; } });
@@ -1684,11 +1698,13 @@ const UA = navigator.userAgent || "";
 const IS_IOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
 const IS_ANDROID = /Android/.test(UA);
 const IN_APP_BROWSER = /Instagram|FBAN|FBAV|FB_IAB|musical_ly|BytedanceWebview|TikTok|Snapchat|WhatsApp/i.test(UA);
-const IS_STANDALONE = () => window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || window.matchMedia("(display-mode: minimal-ui)").matches || navigator.standalone === true;
+/* Daftar is used only as an installed app: phone home screen, the Android app, or a desktop app window.
+   The Android app opens us with ?from=android_app (and an android-app:// referrer); we remember that for the session. */
+const FROM_ANDROID_APP = (()=>{ try{ if(/from=android_app/.test(location.search) || /^android-app:\/\/co\.daftarapp\.app/.test(document.referrer)) sessionStorage.setItem("twa","1"); return sessionStorage.getItem("twa")==="1"; }catch(e){ return false; } })();
+const IS_STANDALONE = () => ["standalone","fullscreen","minimal-ui","window-controls-overlay"].some(m=>window.matchMedia(`(display-mode: ${m})`).matches) || navigator.standalone === true || FROM_ANDROID_APP;
 function needsGate(){
   if(window.Capacitor || window.DEMO_MODE || IS_STANDALONE()) return false;
   if(/type=recovery/.test(location.hash)) { BROWSER_RESET = true; return false; }
-  if(!IS_IOS && !IS_ANDROID){ try{ if(sessionStorage.getItem("dweb")==="1") return false; }catch(e){} }
   return true;
 }
 window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); INSTALL_EVT = e; const b = document.getElementById("gateInstall"); if(b) b.hidden = false; });
@@ -1698,14 +1714,19 @@ function gateView(){
   const iosSafari = IS_IOS && /Safari/.test(UA) && !/CriOS|FxiOS|EdgiOS/.test(UA) && !IN_APP_BROWSER;
   let steps = "";
   if(IS_IOS) steps = `${!iosSafari?`<div class="msg warn">${t("gateSafari")}</div>`:""}<ol class="gate-steps"><li>${share}<span>${t("gateIos1")}</span></li><li><span>${t("gateIos2")}</span></li><li><span>${t("gateIos3")}</span></li></ol>`;
-  else steps = `<button class="btn primary big" id="gateInstall" data-act="gateInstall" ${INSTALL_EVT?"":"hidden"}>${t("gateInstall")}</button><ol class="gate-steps"><li><span>${t("gateAnd1")}</span></li><li><span>${t("gateAnd2")}</span></li></ol>`;
+  else if(IS_ANDROID) steps = `${IN_APP_BROWSER?"":`<a class="btn primary big" href="/download/daftar.apk" id="gateApk" hidden download>${t("gateApk")}</a>`}<button class="btn primary big" id="gateInstall" data-act="gateInstall" ${INSTALL_EVT?"":"hidden"}>${t("gateInstall")}</button><ol class="gate-steps"><li><span>${t("gateAnd1")}</span></li><li><span>${t("gateAnd2")}</span></li></ol>`;
+  else { const canInstall = /Chrome|Edg\//.test(UA) && !/OPR\//.test(UA), mac = /Macintosh/.test(UA), safari = /Safari/.test(UA) && !/Chrome|Edg\//.test(UA);
+    steps = `<button class="btn primary big" id="gateInstall" data-act="gateInstall" ${INSTALL_EVT?"":"hidden"}>${t("gateInstall")}</button>
+      ${canInstall ? `<ol class="gate-steps"><li><span>${t("gatePc1")}</span></li><li><span>${t("gatePc2")}</span></li></ol>` : mac && safari ? `<ol class="gate-steps"><li><span>${t("gateMac1")}</span></li><li><span>${t("gatePc2")}</span></li></ol>` : `<div class="msg warn">${t("gatePcBrowser")}</div>`}`; }
   return `<div class="auth"><div class="auth-top"><span></span><button class="btn ghost sm" data-act="lang">${t("otherLang")}</button></div>
     <div class="auth-logo">${MARK}<b>${esc(t("appName"))}</b></div>
     <div class="auth-card"><h1 class="atitle">${t("gateTitle")}</h1><p class="sub">${S.gateMsg || (S.gateDone?t("gateDone"):t("gateSub"))}</p>
       ${IN_APP_BROWSER?`<div class="msg warn">${t("gateInApp")}</div>`:""}${S.invite?`<div class="msg info">${t("gateKeepCode",{c:`<b class="ltr code-big">${esc(S.invite)}</b>`})}</div>`:""}${steps}
       <a class="btn big" href="../get/#how-${IS_IOS?"iphone":IS_ANDROID?"android":"pc"}">${t("gateHow")}</a></div>
-    ${!IS_IOS && !IS_ANDROID ? `<div class="auth-foot"><button class="linkbtn" data-act="gateWeb">${t("gateWeb")}</button></div>` : ""}</div>`;
+    </div>`;
 }
+/* the gate offers the Android app file once one has been published */
+function gateApkCheck(){ if(!IS_ANDROID) return; fetch("/download/android.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{ const a = document.getElementById("gateApk"); if(j && j.bytes && a) a.hidden = false; }).catch(()=>{}); }
 
 /* ===== session ===== */
 let loggingIn = false;
@@ -1857,7 +1878,6 @@ const A = {
 
   eye: id => { const i = document.getElementById(id); if(!i) return; const show = i.type==="password"; i.type = show ? "text" : "password"; const b = document.querySelector(`[data-act="eye"][data-id="${id}"]`); if(b) b.textContent = show ? t("hidePw") : t("showPw"); },
   gateInstall: async () => { if(window.dtrack) window.dtrack("install_click"); if(!INSTALL_EVT) return; INSTALL_EVT.prompt(); try{ await INSTALL_EVT.userChoice; }catch(e){} INSTALL_EVT = null; render(); },
-  gateWeb: () => { try{ sessionStorage.setItem("dweb","1"); }catch(e){} location.reload(); },
   resend: async (id, el) => { el.disabled = true;
     const r = S.sentKind==="signup" ? await sb.auth.resend({type:"signup", email:S.sentTo, options:{emailRedirectTo:baseUrl()}}) : await sb.auth.resetPasswordForEmail(S.sentTo, {redirectTo:baseUrl()});
     toast(r && r.error ? authError(r.error) : t("resent")); setTimeout(()=>{ if(el.isConnected) el.disabled = false; }, 30000); },
@@ -1905,7 +1925,7 @@ if("serviceWorker" in navigator && location.protocol==="https:" && !window.Capac
   if(needsGate()){
     // an old e-mail link opened in the browser: don't sign the browser in, send them back to the app
     if(/access_token|type=signup|type=recovery|error_description/.test(location.hash)){ S.gateDone = true; history.replaceState(null,"",location.pathname); }
-    S.screen = "gate"; render(); return;
+    S.screen = "gate"; render(); gateApkCheck(); return;
   }
   sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, {auth:{persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, flowType:"implicit"}});
   RECOVERING = /type=recovery/.test(location.hash);
@@ -4347,3 +4367,399 @@ document.addEventListener("change", e=>{
   if(e.target.id==="f_partyId" && document.getElementById("f_svc")){ const p = partyById(e.target.value); if(p){ const n = document.getElementById("f_name"), ph = document.getElementById("f_phone"); if(n) n.value = p.name; if(ph && p.phone) ph.value = p.phone; } }
   if(e.target.id==="posCust" && POS){ POS.redeem = 0; posRender(); }
 });
+/* =====================================================================
+   Daftar help assistant (inside the app, on the user's own device).
+   Answers "how do I…" questions from a written guide of the app, in
+   Jordanian/Gulf/Egyptian Arabic, standard Arabic and English, tolerating
+   typos. No AI and no server: nothing the user types leaves the phone
+   unless they choose to send it to the support team. When it can't help,
+   it hands the question (and the chat so far) to the team in one tap.
+   ===================================================================== */
+const HELP = (() => {
+  // [text](#go:money/invoices) opens a page · [text](#do:act:id) runs an app action · {units} = this business's word for projects/branches
+  const KB = [
+    { id:"invoice", q:["كيف اعمل فاتورة","بدي اطلع فاتورة لزبون","فاتورة بيع جديدة","كيف بصدر فاتورة ضريبية","اعمل فاتوره","طلع فاتورة","فاتورة مبيعات","create invoice","new sales invoice","how do i make an invoice","issue an invoice"],
+      a:"من الرئيسية اضغط «فاتورة بيع»، أو من الفلوس ← الفواتير ← «فاتورة بيع». اختار الزبون، وضيف السطور (الصنف، الكمية، السعر، الضريبة)، واختار طريقة الدفع: نقدي، بعد 30 يوم، أو أقساط. احفظ، وبعدها بتقدر تبعتها واتساب أو تطبعها PDF.\n[اعمل فاتورة بيع هلأ](#do:newInv:sale)",
+      e:"From Home tap “Sales invoice”, or Money → Invoices → “Sales invoice”. Pick the customer, add lines (item, qty, price, tax) and choose how they pay: cash, after 30 days, or installments. Save, then send it on WhatsApp or print a PDF.\n[New sales invoice](#do:newInv:sale)", f:["share_invoice","edit","customers"] },
+    { id:"share_invoice", q:["كيف ابعت الفاتورة واتساب","اطبع الفاتورة","فاتورة pdf","ابعث الفاتورة للزبون","طباعة فاتورة","وين زر الطباعة","send invoice on whatsapp","print invoice","invoice pdf"],
+      a:"افتح الفاتورة من الفلوس ← الفواتير، وبتلاقي فيها «ابعت واتساب» و«اطبع / PDF». ومن نفس المكان: «سجّل دفعة»، «اعمل مرتجع»، «نسخة جديدة»، و«كرّرها كل شهر».\n[افتح الفواتير](#go:money/invoices)",
+      e:"Open the invoice from Money → Invoices. You'll find “Send on WhatsApp” and “Print / PDF” there, plus “Record a payment”, “Make a return”, “Duplicate” and “Repeat monthly”.\n[Open invoices](#go:money/invoices)", f:["invoice","receipt","print"] },
+    { id:"edit", q:["كيف اعدل حركة","بدي احذف مصروف","كيف امسح فاتورة","غلطت بمبلغ بدي اعدله","حذف حركة","تعديل فاتورة","شطب قيد غلط","سجلت اشي غلط","edit an expense","delete an invoice","fix a wrong entry","undo"],
+      a:"اضغط على أي حركة أو فاتورة بتفتحلك. للحركات (مصروف، دخل، سلفة): عدّل واحفظ، أو «حذف» تحت. للفاتورة: افتحها ← «عدّل»، وتحت في «حذف».\nوإذا حذفت إشي بالغلط، ولا يهمك: بنقدر نرجّعه خلال 30 يوم، احكي مع الفريق.",
+      e:"Tap any entry or invoice to open it. For entries (expense, income, advance): edit and save, or tap “Delete” at the bottom. For an invoice: open it → “Edit”, and “Delete” is at the bottom.\nDeleted something by mistake? We can bring it back within 30 days, just message the team.", f:["deleted","activity"] },
+    { id:"deleted", esc:1, q:["حذفت اشي بالغلط","انحذفت البيانات","ضاعت الفواتير","راحت كل الحركات","اختفت البيانات","البيانات طارت","مسحت فاتورة بالغلط بدي ارجعها","ضاعت حساباتي","راحت حساباتي","كيف ارجع اشي محذوف","استرجاع المحذوف","deleted by mistake","my data is gone","restore deleted","lost my data"],
+      a:"ولا تقلق، أي إشي بينحذف بنحتفظ بنسخته 30 يوم وبنقدر نرجّعه. ابعتلنا شو اللي انحذف وتقريباً إمتى، وبنرجّعه لشركتك.\nوإذا البيانات مش ظاهرة بس (مش محذوفة): تأكد إنك على نفس الحساب، وإنه الشهر أو الفلتر فوق صح.",
+      e:"Don't worry: anything deleted is kept for 30 days and we can bring it back. Tell us what was deleted and roughly when, and we'll restore it.\nIf it's just not showing (not deleted): check you're on the same account and that the month or filter at the top is right.", f:["sync","human"] },
+    { id:"purchase", q:["فاتورة شراء","سجل مشتريات","اشتريت بضاعة من مورد","فاتورة مورد","بضاعة وصلت","purchase bill","supplier invoice","record a purchase","goods arrived"],
+      a:"الفلوس ← الفواتير ← «فاتورة شراء». اختار المورّد والأصناف والكميات، والمخزون بيزيد لحاله. وإذا دفعتله، سجّلها من «دفعنا لمورّد».\n[فاتورة شراء جديدة](#do:newInv:purchase)",
+      e:"Money → Invoices → “Purchase bill”. Pick the supplier, items and quantities; stock goes up by itself. When you pay them, use “Paid a supplier”.\n[New purchase bill](#do:newInv:purchase)", f:["supplier_pay","stock"] },
+    { id:"quote", q:["عرض سعر","بدي ابعت عرض سعر لزبون","طلب شراء","حول عرض السعر لفاتورة","quotation","make a quote","purchase order"],
+      a:"الفلوس ← الفواتير ← «عروض وطلبات» ← «عرض سعر جديد» (أو «طلب شراء جديد» للمورّد). وبس يوافق الزبون، بتحوّله لفاتورة بضغطة.\n[افتح الفواتير](#go:money/invoices)",
+      e:"Money → Invoices → “Quotes & orders” → “New quote” (or “New purchase order” for a supplier). Once the customer agrees, turn it into an invoice in one tap.\n[Open invoices](#go:money/invoices)", f:["invoice","share_invoice"] },
+    { id:"returns", q:["مرتجع","زبون رجع بضاعة","ارجاع فاتورة","رجعت بضاعة للمورد","return","refund","credit note"],
+      a:"افتح الفاتورة الأصلية ← «اعمل مرتجع»، واختار شو رجع. المخزون والحساب بيتعدّلوا لحالهم.\n[افتح الفواتير](#go:money/invoices)",
+      e:"Open the original invoice → “Make a return” and pick what came back. Stock and balances adjust by themselves.\n[Open invoices](#go:money/invoices)", f:["invoice","stock"] },
+    { id:"expense", q:["كيف اسجل مصروف","دفعت بنزين","سجل فاتورة كهربا","مصاريف","اشتريت مواد","صورة الفاتورة","ارفق فاتورة","record an expense","add expense","attach a receipt photo"],
+      a:"من الرئيسية «مصروف»: اكتب المبلغ، واختار البند والملف (من ال{units})، وبتقدر «صوّر الفاتورة» أو «أرفق ملف». وإذا البند مش موجود، «بند مش موجود؟ ضيفه».\n[سجّل مصروف](#do:q:exp)",
+      e:"From Home tap “Expense”: type the amount, pick the category and project, and you can snap the receipt or attach a file. Missing category? Add it right there.\n[Record an expense](#do:q:exp)", f:["recurring","edit","reports"] },
+    { id:"income", q:["سجل دخل","وصلتني دفعة","قبضت مصاري","دخل من زبون","record income","got paid"],
+      a:"من الرئيسية «دخل» لأي دفعة دخلت. وإذا الدفعة من زبون عليه فاتورة، الأحسن «قبضنا من زبون» عشان تنقص من رصيده.\n[سجّل دخل](#do:q:inc)",
+      e:"From Home tap “Income” for any money in. If it's a customer paying an invoice, use “Received from customer” so their balance goes down.\n[Record income](#do:q:inc)", f:["receipt","customers"] },
+    { id:"receipt", q:["سند قبض","زبون دفعلي","قبضنا من زبون","سجل دفعة على فاتورة","الزبون سدد","receipt voucher","customer paid me","record a payment"],
+      a:"من الرئيسية «قبضنا من زبون»: اختار الزبون والمبلغ وطريقة الدفع (كاش، تحويل / كليك، بطاقة، شيك). أو افتح الفاتورة ← «سجّل دفعة».\n[قبضنا من زبون](#do:q:rec)",
+      e:"From Home tap “Received from customer”: pick the customer, amount and method (cash, transfer, card, cheque). Or open the invoice → “Record a payment”.\n[Received from customer](#do:q:rec)", f:["cheques","customers"] },
+    { id:"supplier_pay", q:["سند صرف","دفعت لمورد","سددت للمورد","دفعنا لمورد","paid a supplier","payment voucher"],
+      a:"الفلوس ← العملاء ← افتح المورّد ← «دفعنا لمورّد». اختار المبلغ والطريقة، وإذا شيك بيدخل على قائمة الشيكات.\n[افتح العملاء](#go:money/parties)",
+      e:"Money → Contacts → open the supplier → “Paid a supplier”. Pick the amount and method; a cheque goes on your cheque list.\n[Open contacts](#go:money/parties)", f:["cheques","purchase"] },
+    { id:"customers", q:["زبون جديد","ضيف زبون","كشف حساب زبون","مين عليه الي","ديون الزباين","ابعت كشف للزبون","مورد جديد","كم عليه","new customer","customer statement","who owes me","add supplier"],
+      a:"الفلوس ← العملاء: بتشوف كل زبون وكم عليه. «زبون أو مورّد جديد» لإضافة واحد. افتح الزبون بتلاقي كشفه كامل، و«ابعت الكشف واتساب» و«اطبع الكشف».\n[افتح العملاء](#go:money/parties)",
+      e:"Money → Contacts shows every customer and what they owe. “New contact” adds one. Open a customer to see the full statement, with “Send statement on WhatsApp” and “Print statement”.\n[Open contacts](#go:money/parties)", f:["receipt","invoice"] },
+    { id:"cheques", q:["شيك","سجل شيك","شيكات مؤجلة","شيك رجع","الشيك انصرف","اودعت الشيك","شيكات صادرة","cheque","post dated cheque","bounced cheque"],
+      a:"الشيك بيتسجّل وقت القبض أو الدفع: اختار «شيك» كطريقة دفع. بعدها الفلوس ← الشيكات: «شيكات واردة» و«صادرة»، وافتح الشيك وغيّر حالته: «أودعته بالبنك»، «انصرف»، أو «رجع».\n[افتح الشيكات](#go:money/cheques)",
+      e:"A cheque is recorded when you receive or pay: choose “Cheque” as the method. Then Money → Cheques (received / issued): open one and set it to deposited, cleared, or bounced.\n[Open cheques](#go:money/cheques)", f:["radar","receipt"] },
+    { id:"stock", q:["مخزون","صنف جديد","ضيف منتج","كم ضايل بالمخزن","جرد","حركة مخزون","قديش باقي من البضاعة","مستودع","الاصناف","inventory","add item","stock count","warehouse"],
+      a:"الفلوس ← المخزون: «صنف جديد» لإضافة منتج (السعر، التكلفة، الكمية، وحد التنبيه)، و«حركة مخزون» للإدخال والإخراج والجرد، و«المستودعات» إذا عندك أكثر من مخزن. البيع والشراء بيعدّلوا الكميات لحالهم.\n[افتح المخزون](#go:money/stock)",
+      e:"Money → Stock: “New item” adds a product (price, cost, quantity, low-stock alert); “Stock movement” for in, out and counts; “Warehouses” if you have more than one. Sales and purchases update quantities by themselves.\n[Open stock](#go:money/stock)", f:["barcode","move","pos"] },
+    { id:"barcode", q:["باركود","امسح الباركود بالكاميرا","جهاز باركود","طباعة ملصقات","ستيكر سعر","قارئ باركود","barcode","scan barcode","print labels"],
+      a:"بنقطة البيع اضغط زر الكاميرا وامسح الباركود، أو وصّل قارئ باركود وبيشتغل لحاله. ولطباعة ملصقات: المخزون ← «طباعة ملصقات باركود».\n[افتح نقطة البيع](#do:pos)",
+      e:"In Point of sale tap the camera button and scan, or plug in a barcode scanner and it just works. For labels: Stock → “Print barcode labels”.\n[Open point of sale](#do:pos)", f:["pos","stock","print"] },
+    { id:"pos", q:["نقطة البيع","كاشير","بيع سريع بالمحل","pos","cashier","quick sale"],
+      a:"من الرئيسية «نقطة بيع»: اضغط على الأصناف أو امسح الباركود، واختار طريقة الدفع، وخلص. كل بيعة بتنزل من المخزون وبتنحسب لحالها.\n[افتح نقطة البيع](#do:pos)",
+      e:"From Home tap “Point of sale”: tap items or scan, choose payment, done. Each sale comes off stock and is booked automatically.\n[Open point of sale](#do:pos)", f:["barcode","print","team"] },
+    { id:"print", q:["طابعة حرارية","طابعة وصولات","اطبع ايصال","طباعة","printer","thermal printer","receipt printer"],
+      a:"أي فاتورة أو كشف فيه «اطبع / PDF». بيطبع على أي طابعة موصولة بالجهاز، ومنها طابعات الإيصالات الحرارية (58 أو 80 ملم) من شاشة الطباعة بالمتصفح.",
+      e:"Every invoice or statement has “Print / PDF”. It prints to any printer connected to the device, including 58 or 80 mm thermal receipt printers, from the browser's print screen.", f:["share_invoice","pos"] },
+    { id:"attendance", q:["كيف اسجل الدوام","مين داوم اليوم","غياب عامل","حضور وغياب","تسجيل حضور","الدوام","attendance","mark absent","who came today"],
+      a:"من الرئيسية «الدوام» ← اختار الملف (من ال{units}) ← جنب كل واحد «داوم» أو «غاب». و«الساعات» إذا بدك وقت دخول وطلوع أو إضافي.\n[سجّل الدوام](#do:q:att)",
+      e:"From Home tap “Attendance” → pick the project → “Present” or “Absent” next to each person. Use “Hours” for in/out times or overtime.\n[Record attendance](#do:q:att)", f:["add_staff","payroll","overtime"] },
+    { id:"add_staff", q:["ضيف عامل","موظف جديد","كيف اضيف عامل","سجل موظف","شغيل جديد","add employee","add worker","new staff"],
+      a:"افتح الملف (من ال{units}) اللي بيشتغل فيه، وتحت اضغط «ضيف عامل»: الاسم، المهنة، اليومية أو الراتب الشهري، والضمان إذا مشترك.\n[افتح ال{units}](#go:units)",
+      e:"Open the project they work on and tap “Add worker” at the bottom: name, job, daily rate or monthly salary, and social security if they're enrolled.\n[Open projects](#go:units)", f:["attendance","payroll","team"] },
+    { id:"advance", q:["سلفة","عامل بده سلفة","سجل سلفة","advance","loan to worker"],
+      a:"من الرئيسية «سلفة» ← اختار الشخص والمبلغ. بتنخصم لحالها من حسابه وبتبين بالكشف وقسيمة الراتب.\n[سجّل سلفة](#do:q:adv)",
+      e:"From Home tap “Advance” → pick the person and amount. It's taken off their pay automatically and shows on their statement and payslip.\n[Record an advance](#do:q:adv)", f:["payroll"] },
+    { id:"payroll", q:["الرواتب","كيف ادفع الراتب","قسيمة راتب","حساب الراتب","كم الو","كشف العامل","salary","payroll","payslip","pay workers"],
+      a:"الفريق: بتشوف كل واحد كم إله بعد السلف والغياب. «ادفع الباقي» لما تدفعله، «قسيمة راتب»، و«ابعت الكشف واتساب». وبتقدر تبدّل بين «أسبوع» و«شهر» فوق.\n[افتح الفريق](#go:team)",
+      e:"Team shows what each person is owed after advances and absences. “Pay the rest” when you pay, “Payslip”, and “Send statement on WhatsApp”. Switch Week / Month at the top.\n[Open team](#go:team)", f:["ss","advance","leave"] },
+    { id:"ss", q:["الضمان","اشتراكات الضمان","كشف الضمان","الضمان الاجتماعي","social security","ss contributions"],
+      a:"عند الموظف شغّل «الضمان» واكتب رقمه، ودفتر بيحسب الاقتطاع وحصة الشركة. من الفريق ← «كشف الضمان الشهري» بيطلعلك الكشف الجاهز، وبيذكّرك قبل يوم 15.\n[كشف الضمان](#do:ssSheet)",
+      e:"Turn on social security for the employee and add their number; Daftar works out both shares. Team → “Monthly SS sheet” gives the ready sheet, with a reminder before the 15th.\n[SS sheet](#do:ssSheet)", f:["payroll","incometax"] },
+    { id:"leave", q:["اجازة","سجل اجازة","رصيد اجازات","اجازة مرضية","leave","vacation","sick leave"],
+      a:"الفريق ← «سجّل إجازة»، أو «إجازة» جنب الشخص. اختار النوع والأيام، والرصيد بينحسب لحاله.\n[سجّل إجازة](#do:leave)",
+      e:"Team → “Record leave”, or “Leave” next to the person. Pick the type and days; the balance is tracked for you.\n[Record leave](#do:leave)", f:["payroll","attendance"] },
+    { id:"overtime", q:["اضافي","ساعات اضافية","تاخير","ساعة دخول وطلوع","overtime","late","working hours"],
+      a:"داخل الملف (من ال{units}) جنب العامل «الساعات»: سجّل الدخول والطلوع، والإضافي بينحسب 125% أو 150% حسب قانون العمل.",
+      e:"Inside the project, tap “Hours” next to the worker: record in and out times; overtime is paid at 125% or 150% per labour law.", f:["attendance","payroll"] },
+    { id:"units", q:["مشروع جديد","فرع جديد","ضيف فرع","افتح ملف جديد","سكر مشروع","ملفات","new project","new branch","close a project"],
+      a:"من الرئيسية «مشروع جديد» (أو حسب نوع شغلك: فرع، قسم…). كل ملف إله مصاريفه ودخله وعماله وربحه لحاله. ولما يخلص، افتحه ← «تعديل» وسكّره.\n[افتح ال{units}](#go:units)",
+      e:"From Home tap “New project” (or branch, depending on your business). Each one has its own expenses, income, workers and profit. When it's done, open it → “Edit” and close it.\n[Open projects](#go:units)", f:["add_staff","expense","reports"] },
+    { id:"team", q:["ضيف محاسب","بدي شريكي يدخل","كيف اضيف مستخدم","كود الدعوة","الفريق على دفتر","اكثر من مستخدم","صلاحيات","كاشير بس","add a user","invite accountant","team access","permissions"],
+      a:"⚙ (فوق) ← «فريق الشركة على دفتر» ← «ضيف شخص». بيطلعلك كود دعوة تبعته إله، وهو بيسجّل ويكتب الكود. واختار دوره: مدير، محاسب، كاشير، أو مشاهد بس. وبتشيله وقت ما بدك.\n[فريق الشركة](#do:team)",
+      e:"⚙ (top) → “Team access” → “Add a person”. You get an invite code to send them; they sign up and enter it. Choose their role: manager, accountant, cashier or view-only, and remove them anytime.\n[Team access](#do:team)", f:["activity","multico"] },
+    { id:"join", q:["عندي كود دعوة","كيف ادخل على شركة صاحبي","انضم لشركة","وين احط الكود","invite code","join my company"],
+      a:"وقت التسجيل اضغط «عندك كود دعوة من شركتك؟» واكتب الكود. لازم يكون حسابك جديد ومش فاتح شركة لحاله.",
+      e:"When signing up, tap “Got an invite code from your company?” and enter it. Your account must be new, without its own business.", f:["team","login"] },
+    { id:"activity", q:["مين حذف","مين عدل","سجل النشاط","بدي اعرف مين غير","activity log","who deleted","who changed"],
+      a:"⚙ ← «سجل النشاط» (لصاحب الشركة): مين أضاف أو عدّل أو حذف شو، ومتى.\n[سجل النشاط](#do:activity)",
+      e:"⚙ → “Activity log” (owner only): who added, changed or deleted what, and when.\n[Activity log](#do:activity)", f:["team","deleted"] },
+    { id:"reports", q:["تقارير","الارباح","كم ربحت","قائمة الدخل","الميزانية","ميزان المراجعة","القيود","شجرة الحسابات","reports","profit","income statement","balance sheet","trial balance"],
+      a:"الفلوس ← التقارير: الشهر، الشهرين، أو السنة. وبالفلوس ← المحاسبة: «قائمة الدخل»، «الميزانية»، «ميزان المراجعة»، «القيود» و«شجرة الحسابات». وكل مشروع إله ربحه بصفحته.\n[افتح التقارير](#go:money/reports)",
+      e:"Money → Reports by month, two months or year. Money → Accounting has the income statement, balance sheet, trial balance, journal and chart of accounts. Each project shows its own profit.\n[Open reports](#go:money/reports)", f:["vat","export","radar"] },
+    { id:"vat", q:["ضريبة المبيعات","الاقرار الضريبي","اقرار الضريبة","كم علي ضريبة","فترة الاقرار","الرقم الضريبي","vat","sales tax return","tax return"],
+      a:"الفلوس ← التقارير ← «شهرين (فترة الإقرار)»: بيطلعلك ضريبة المبيعات والمشتريات والصافي. والرقم الضريبي بتحطه من ⚙ ← «إعدادات الشركة» عشان يطلع على الفواتير.\n[افتح التقارير](#go:money/reports)",
+      e:"Money → Reports → “2 months (filing period)” shows output tax, input tax and the net. Add your tax number in ⚙ → “Business settings” so it prints on invoices.\n[Open reports](#go:money/reports)", f:["settings","reports"] },
+    { id:"incometax", q:["ضريبة الدخل","ضريبة دخل الموظف","income tax"],
+      a:"عند الموظف بتقدر تحسب ضريبة الدخل الشهرية وتبين بقسيمة الراتب. افتح الموظف من الفريق وشوف خيارات الراتب.",
+      e:"For an employee you can work out monthly income tax and show it on the payslip. Open them from Team and check their pay options.", f:["payroll","ss"] },
+    { id:"radar", q:["رادار السيولة","السيولة","رح تنقص المصاري","توقع الرصيد","الكاش الجاي","cash flow","cash radar","forecast"],
+      a:"الفلوس ← السيولة: بيحسب رصيدك يوم بيوم للأسابيع الجاية من الشيكات والفواتير المستحقة والرواتب، وبيحكيلك إمتى أقل رصيد. «صحّح» إذا الرصيد الحالي مش مزبوط.\n[افتح السيولة](#go:money/radar)",
+      e:"Money → Cash: your balance day by day for the coming weeks from cheques, invoices due and payroll, with your lowest point. Tap “Fix” if today's balance is off.\n[Open cash radar](#go:money/radar)", f:["cheques","notify"] },
+    { id:"export", q:["تصدير اكسل","نسخة احتياطية","بدي انزل بياناتي","اطلع كل اشي اكسل","backup","export excel","download my data"],
+      a:"⚙ ← «صدّر كل شي Excel (شيت لكل قسم)». وكمان بالحركات «تصدير Excel» للشهر، وبالفواتير «صدّر الفواتير Excel». بياناتك كمان محفوظة عنا ومحمية.\n[صدّر كل شي](#do:exportXls)",
+      e:"⚙ → “Export everything to Excel (one sheet per section)”. Also “Export to Excel” in Moves, and “Export invoices (Excel)” in Invoices. Your data is also kept safe on our side.\n[Export everything](#do:exportXls)", f:["security","move"] },
+    { id:"move", q:["انقل من برنامج ثاني","استيراد من اكسل","عندي بيانات قديمة","نقل البيانات","ارصدة افتتاحية","import from excel","migrate","opening balances"],
+      a:"⚙ ← «انقل من برنامج ثاني»: بيقرأ ملفات Excel وCSV (زباين، موردين، أصناف، أرصدة). وفيه «شوف كيف بالفيديو».\n[انقل بياناتك](#do:move)",
+      e:"⚙ → “Move from another program”: it reads Excel and CSV files (customers, suppliers, items, balances), with a how-to video.\n[Move your data](#do:move)", f:["export","stock"] },
+    { id:"settings", q:["اغير اسم الشركة","الشعار","لوجو","عنوان الشركة","ايام العطلة","نوع الشغل","اعدادات الشركة","company name","logo","business settings","days off"],
+      a:"⚙ ← «إعدادات الشركة»: الاسم، نوع الشغل، العملة، اللغة، أيام العطلة، الرقم الضريبي والعنوان.\n[إعدادات الشركة](#do:settings)",
+      e:"⚙ → “Business settings”: name, type of business, currency, language, days off, tax number and address.\n[Business settings](#do:settings)", f:["currency","language"] },
+    { id:"currency", q:["اغير العملة","العملة غلط","بدي ريال بدل دينار","عملة","currency","change currency"],
+      a:"⚙ ← «إعدادات الشركة» ← العملة. التغيير بيغيّر طريقة العرض بس، الأرقام نفسها ما بتتحول.\n[إعدادات الشركة](#do:settings)",
+      e:"⚙ → “Business settings” → Currency. It changes how amounts are shown; it doesn't convert them.\n[Business settings](#do:settings)", f:["settings"] },
+    { id:"language", q:["اغير اللغة","انجليزي","بدي عربي","اللغة","change language","english","arabic"],
+      a:"اضغط زر الكرة 🌐 فوق بيتبدّل بين العربي والإنجليزي.",
+      e:"Tap the globe 🌐 button at the top to switch between Arabic and English.", f:["settings"] },
+    { id:"password", q:["اغير كلمة السر","تغيير الباسورد","نسيت كلمة السر","ما بقدر ادخل","كلمة السر غلط","change password","forgot password","can't log in"],
+      a:"لتغييرها: ⚙ ← «تغيير كلمة السر». وإذا نسيتها: من شاشة الدخول «نسيت كلمة السر؟» وبيوصلك رابط على الإيميل (شوف الـ Spam كمان).\n[تغيير كلمة السر](#do:changePw)",
+      e:"To change it: ⚙ → “Change password”. Forgot it? On the sign-in screen tap “Forgot your password?” and we'll email a link (check Spam too).\n[Change password](#do:changePw)", f:["login","human"] },
+    { id:"login", q:["ما بقدر افوت","مش زابط الدخول","الحساب مش راضي يفتح","ما وصلني ايميل التفعيل","تفعيل الحساب","login problem","didn't get the email","verify email"],
+      a:"تأكد من الإيميل وكلمة السر، وإذا ما وصلك إيميل التفعيل أو الرابط شوف مجلد الـ Spam أو الـ Promotions. إذا لسا مش زابط، احكي مع الفريق وبنساعدك.",
+      e:"Check the email and password. If the activation or reset email didn't arrive, look in Spam or Promotions. Still stuck? Message the team and we'll help.", f:["password","human"] },
+    { id:"notify", q:["الاشعارات","بدي يوصلني تنبيه","ملخص يومي","ما بيوصلني اشعار","تنبيهات الجوال","notifications","daily summary","not getting notifications"],
+      a:"⚙ ← «الإشعارات» ← «شغّل الإشعارات»: ملخص اليوم الساعة 9 بالليل، وشو عليك الساعة 8 الصبح، ورد الفريق على رسائلك. وجرّب «ابعتلي إشعار تجربة». على الآيفون لازم تفتح دفتر من الأيقونة على الشاشة الرئيسية.\n[الإشعارات](#do:push)",
+      e:"⚙ → “Notifications” → turn them on: today's summary at 9 pm, what's due at 8 am, and the team's replies to you. Try “Send me a test”. On iPhone, open Daftar from its home-screen icon first.\n[Notifications](#do:push)", f:["radar","install"] },
+    { id:"recurring", q:["مصروف ثابت كل شهر","اجار شهري","اشتراك شهري","فاتورة متكررة","كرر كل شهر","recurring","monthly rent","repeat every month"],
+      a:"افتح المصروف أو الفاتورة ← «كرّرها كل شهر». وبتشوف كل المتكرر من ⚙ ← «المتكرر كل شهر».\n[المتكرر](#do:recurring)",
+      e:"Open the expense or invoice → “Repeat monthly”. See them all in ⚙ → “Monthly recurring”.\n[Recurring](#do:recurring)", f:["expense","invoice"] },
+    { id:"appointments", q:["مواعيد","حجز موعد","جدول المرضى","حجوزات الصالون","appointments","bookings"],
+      a:"⚙ ← «المواعيد»: سجّل مواعيد الزباين أو المرضى وشوفها باليوم.\n[المواعيد](#do:appts)",
+      e:"⚙ → “Appointments”: book customers or patients and see the day's list.\n[Appointments](#do:appts)", f:["customers"] },
+    { id:"loyalty", q:["نقاط ولاء","نقاط للزباين","مكافآت","loyalty points","rewards"],
+      a:"⚙ ← «نقاط الولاء»: حدد كم نقطة لكل دينار وقيمة النقطة، والنقاط بتنجمع للزبون مع كل فاتورة.\n[نقاط الولاء](#do:loySet)",
+      e:"⚙ → “Loyalty points”: set points per unit spent and what a point is worth; customers collect them on every invoice.\n[Loyalty points](#do:loySet)", f:["customers","pos"] },
+    { id:"installments", q:["اقساط","تقسيط","دفعات شهرية","بيع بالتقسيط","installments","payment plan"],
+      a:"بالفاتورة اختار طريقة الدفع «أقساط»، وحدد الدفعة الأولى وعدد الأقساط. الرادار بيذكّرك بكل قسط، والكشف بيبين شو ضايل.",
+      e:"In the invoice choose “Installments” as the payment method and set the down payment and number of installments. The radar reminds you of each one and the statement shows what's left.", f:["invoice","radar"] },
+    { id:"jofotara", q:["جوفوتارا","الفوترة الوطنية","ربط مع الضريبة","فاتورة الكترونية معتمدة","jofotara","e-invoicing"],
+      a:"فواتير دفتر ضريبية وفيها الرقم الضريبي والضريبة مفصّلة. الربط المباشر مع JoFotara لسا مش موجود، فاكتب للفريق إذا شغلك بحتاجه عشان نعطيه أولوية.",
+      e:"Daftar's invoices are tax invoices with your tax number and the tax broken down. A direct JoFotara link isn't there yet; tell the team if you need it so we prioritise it.", f:["vat","human"] },
+    { id:"driver", q:["طلعة","تكسي","كريم","اوبر","توصيل سواق","وردية","taxi","ride","driver shift"],
+      a:"إذا نوع شغلك «تكسي وتوصيل (سائق)»: سجّل الوردية والطلعات حسب التطبيق، ودفتر بيحسب عمولة كل تطبيق وصافيك بالطلعة وبالساعة وبالكيلو.",
+      e:"If your business type is “Taxi & delivery (driver)”: log your shift and trips per app; Daftar works out each app's commission and your net per trip, hour and km.", f:["settings","expense"] },
+    { id:"sync", esc:1, q:["البيانات مش ظاهرة","ما بيحفظ","الجهاز الثاني مش شايف","مش متزامن","سجلت وما طلع","ما بتطلع الحركات","data not showing","not saving","not syncing","other phone doesn't show"],
+      a:"جرّب هيك: تأكد إنه النت شغّال، وإنك داخل بنفس الحساب على الجهازين، وإنه الشهر أو الفلتر فوق صح. اسحب الصفحة لتحت أو سكّر التطبيق وافتحه. إذا لسا، احكي مع الفريق وابعت صورة.",
+      e:"Try this: check the internet, that both devices use the same account, and that the month or filter at the top is right. Pull to refresh or close and reopen the app. Still off? Message the team with a screenshot.", f:["human","offline"] },
+    { id:"wrong", esc:1, q:["في رقم مش مزبوط","الحساب غلط","المجموع غلط","الرصيد مش صح","الارقام مش مزبوطة","الربح غلط","الكشف مش مزبوط","حسبة غلط","wrong number","total is wrong","balance is wrong"],
+      a:"خلينا نشوفها سوا. أول إشي تأكد من: الفترة فوق (أي شهر)، الملف (من ال{units}) المختار، وإذا الأسعار شاملة الضريبة أو لا. إذا لسا مش مزبوط، احكي مع الفريق: اكتب وين الرقم، وشو طالع، وشو المفروض يكون. وصورة بتسرّع الحل.",
+      e:"Let's check it together. First look at: the period at the top, which project is selected, and whether prices include tax. Still wrong? Message the team: where the number is, what it shows and what it should be. A screenshot speeds things up.", f:["human","reports"] },
+    { id:"bug", esc:1, q:["في مشكلة","التطبيق علق","طلعلي خطأ","مش زابط","ما بيفتح","الزر مش شغال","صفحة بيضا","error","app crashed","not working","bug"],
+      a:"آسفين على هالشي. جرّب تسكّر التطبيق وتفتحه، أو حدّث الصفحة. إذا رجعت المشكلة، احكي مع الفريق: شو كنت عم تعمل، وشو طلعلك، وصورة إذا بتقدر.",
+      e:"Sorry about that. Close and reopen the app, or refresh the page. If it happens again, message the team: what you were doing, what you saw, and a screenshot if you can.", f:["human"] },
+    { id:"offline", q:["بدون نت","النت قطع","اوفلاين","بيشتغل بلا انترنت","offline","no internet"],
+      a:"دفتر بيفتح وبيعرض آخر شي محمّل بدون نت، بس الحفظ بحتاج نت. لما يرجع النت، الصفحة بتتحدّث لحالها.",
+      e:"Daftar opens and shows what was last loaded without internet, but saving needs a connection. When you're back online the page refreshes by itself.", f:["sync"] },
+    { id:"security", q:["بياناتي محمية","مين بيشوف حساباتي","خصوصية","الامان","ممكن حدا يشوف ارقامي","بياناتي امنه","هل بياناتي بامان","security","privacy","is my data safe"],
+      a:"بيانات كل شركة مقفولة عليها على مستوى قاعدة البيانات، وما حدا بيشوفها غيرك وغير اللي إنت ضفتهم. وفريق دفتر نفسه ما بيشوف أرقامك. وأي إشي بينحذف بنقدر نرجّعه خلال 30 يوم.",
+      e:"Each business's data is locked to it at the database level; only you and the people you add can see it, not even the Daftar team. Anything deleted can be restored within 30 days.", f:["export","team"] },
+    { id:"price", q:["قديش سعره","مجاني","في اشتراك","لازم ادفع","price","is it free","subscription"],
+      a:"دفتر مجاني، بدون اشتراك ولا بطاقة، وبدون حد للفواتير.",
+      e:"Daftar is free: no subscription, no card, no invoice limit.", f:["security","team"] },
+    { id:"multico", q:["شركتين","اكثر من شركة","شركة ثانية","two businesses","another company"],
+      a:"كل حساب إله شركة وحدة. للشركة الثانية سجّل بإيميل ثاني، وبتقدر تفتح كل وحدة على متصفح أو جهاز.",
+      e:"Each account has one business. For a second one, sign up with another email; you can keep each open in its own browser or device.", f:["team","logout"] },
+    { id:"logout", q:["تسجيل خروج","اطلع من الحساب","ادخل بحساب ثاني","sign out","log out","switch account"],
+      a:"⚙ ← «تسجيل خروج»، وبعدها ادخل بالحساب اللي بدك إياه.\n[⚙ الحساب](#do:account)",
+      e:"⚙ → “Sign out”, then sign in with the other account.\n[⚙ Account](#do:account)", f:["multico"] },
+    { id:"delete_account", q:["احذف حسابي","الغي الحساب","بدي اسكر الشركة","delete my account","close account"],
+      a:"⚙ ← «حذف حساب الشركة» (لصاحب الشركة). الحذف نهائي وبيمسح كل البيانات، فصدّر نسخة Excel قبلها.",
+      e:"⚙ → “Delete business account” (owner only). It's permanent and erases everything, so export to Excel first.", f:["export"] },
+    { id:"install", q:["نزل التطبيق على الشاشة","ايقونة على الشاشة","تثبيت","ايفون","اندرويد","install app","add to home screen"],
+      a:"على أندرويد: Chrome ← القائمة ⋮ ← «تثبيت التطبيق». على الآيفون: Safari ← زر المشاركة ← «إضافة إلى الشاشة الرئيسية». وعلى الكمبيوتر: زر التثبيت بشريط العنوان.",
+      e:"Android: Chrome → menu ⋮ → “Install app”. iPhone: Safari → Share → “Add to Home Screen”. Computer: the install button in the address bar.", f:["notify"] },
+    { id:"human", esc:1, q:["بدي احكي مع حدا","موظف دعم","بدي انسان","تواصل مع الدعم","رقم الدعم","كلموني","talk to a person","contact support","human"],
+      a:"أكيد. اضغط تحت «احكي مع الفريق» واكتب شو بدك، وبيوصلك الرد هون وكإشعار على تلفونك.",
+      e:"Sure. Tap “Talk to the team” below and write what you need; the reply shows up here and as a notification.", f:[] },
+    { id:"hi", q:["مرحبا","السلام عليكم","هلا","اهلين","hi","hello"],
+      a:"أهلاً فيك! اسألني أي إشي عن دفتر: كيف تعمل فاتورة، تسجّل دوام، تضيف محاسب، أو أي إشي ثاني.",
+      e:"Hi! Ask me anything about Daftar: making an invoice, recording attendance, adding your accountant, or anything else.", f:["invoice","attendance","team"] },
+    { id:"thanks", q:["شكرا","يسلمو","مشكور","يعطيك العافية","تسلم","thanks","thank you"],
+      a:"العفو، بخدمتك دايماً 🌷", e:"You're welcome, anytime 🌷", f:[] },
+  ];
+  const KW = {
+    invoice:"فاتوره بيع مبيعات اصدار ضريبي", share_invoice:"واتساب طباعه pdf ابعث ارسل", edit:"تعديل حذف غلط مسح عدل شطب", deleted:"حذف ضياع اختفاء طارت راحت رجع استرجاع محذوف",
+    purchase:"شراء مشتريات مورد بضاعه", quote:"عرض طلب", returns:"مرتجع رجع ارجاع", expense:"مصروف بنزين كهربا مواد ايصال صوره", income:"دخل دفعه قبض",
+    receipt:"سند قبض سدد دفع زبون", supplier_pay:"صرف مورد سدد", customers:"عميل دين كشف عليه", cheques:"شيك بنك مرتجع مؤجل", stock:"مخزون صنف كميه جرد مستودع",
+    barcode:"باركود كاميرا ملصق قارئ", pos:"كاشير نقطه بيع", print:"طابعه طباعه ايصال", attendance:"دوام حضور غياب", add_staff:"موظف عامل جديد", advance:"سلفه",
+    payroll:"راتب قسيمه كشف يوميه", ss:"ضمان", leave:"اجازه", overtime:"اضافي ساعات تاخير", units:"مشروع فرع ملف قسم", team:"فريق محاسب شريك مستخدم صلاحيه دعوه مشاهد",
+    join:"كود دعوه انضم", activity:"نشاط مين", reports:"تقارير ربح ميزانيه قائمه", vat:"ضريبه مبيعات اقرار", incometax:"ضريبه دخل", radar:"سيوله رصيد توقع",
+    export:"تصدير اكسل نسخه", move:"نقل استيراد قديم", settings:"اعدادات اسم شعار عنوان", currency:"عمله", language:"لغه", password:"كلمهسر", login:"دخول تفعيل",
+    notify:"اشعار تنبيه ملخص", recurring:"متكرر شهري ثابت اجار", appointments:"موعد حجز", loyalty:"نقاط ولاء", installments:"قسط", jofotara:"جوفوتارا الكتروني",
+    driver:"تكسي سواق طلعه وردي", sync:"ظاهر يحفظ متزامن جهاز", wrong:"مزبوط غلط خطا رقم مجموع رصيد حسبه", bug:"مشكله خطا علق يفتح", offline:"انترنت",
+    security:"امان خصوصيه محمي", price:"سعر مجان", multico:"شركتين", logout:"خروج", delete_account:"حذف حساب", install:"تثبيت شاشه ايقونه", human:"تواصل دعم انسان موظف",
+  };
+  const SYN = {
+    شو:"ماذا", ايش:"ماذا", اش:"ماذا", وش:"ماذا", ايه:"ماذا", شنو:"ماذا", what:"ماذا", كيف:"كيف", كيفاش:"كيف", شلون:"كيف", ازاي:"كيف", how:"كيف", طريقه:"كيف", وين:"اين", فين:"اين", where:"اين",
+    قديش:"كم", اديش:"كم", كام:"كم", ليش:"لماذا", ليه:"لماذا", why:"لماذا",
+    بدي:"اريد", بدنا:"اريد", بدك:"اريد", ابغى:"اريد", ابغي:"اريد", ابي:"اريد", عايز:"اريد", عاوز:"اريد", حابب:"اريد", want:"اريد", need:"اريد",
+    بقدر:"يمكن", اقدر:"يمكن", نقدر:"يمكن", ينفع:"يمكن", يصير:"يمكن", ممكن:"يمكن", can:"يمكن",
+    زبون:"عميل", زباين:"عميل", زبائن:"عميل", عملاء:"عميل", customer:"عميل", customers:"عميل", client:"عميل",
+    موظف:"موظف", موظفين:"موظف", عمال:"موظف", عامل:"موظف", شغيل:"موظف", شغيله:"موظف", employee:"موظف", worker:"موظف", workers:"موظف", staff:"موظف",
+    مورد:"مورد", موردين:"مورد", supplier:"مورد", vendor:"مورد",
+    راتب:"راتب", رواتب:"راتب", معاش:"راتب", يوميه:"راتب", salary:"راتب", payroll:"راتب", wages:"راتب",
+    فاتوره:"فاتوره", فواتير:"فاتوره", فوتره:"فاتوره", invoice:"فاتوره", invoices:"فاتوره", bill:"فاتوره",
+    شيك:"شيك", شيكات:"شيك", cheque:"شيك", check:"شيك", cheques:"شيك",
+    مخزون:"مخزون", مخزن:"مخزون", مستودع:"مخزون", بضاعه:"مخزون", stock:"مخزون", inventory:"مخزون", جرد:"مخزون",
+    صنف:"صنف", اصناف:"صنف", منتج:"صنف", منتجات:"صنف", item:"صنف", items:"صنف", product:"صنف",
+    مصروف:"مصروف", مصاريف:"مصروف", expense:"مصروف", expenses:"مصروف", spent:"مصروف",
+    باركود:"باركود", barcode:"باركود", سكانر:"باركود", scanner:"باركود",
+    اكسل:"اكسل", excel:"اكسل", csv:"اكسل", شيت:"اكسل",
+    سلفه:"سلفه", سلف:"سلفه", advance:"سلفه", loan:"سلفه",
+    دوام:"دوام", حضور:"دوام", غياب:"دوام", غاب:"دوام", داوم:"دوام", attendance:"دوام", absent:"دوام",
+    حذف:"حذف", احذف:"حذف", حذفت:"حذف", امسح:"حذف", مسحت:"حذف", شطب:"حذف", delete:"حذف", deleted:"حذف", remove:"حذف",
+    عدل:"تعديل", اعدل:"تعديل", تعديل:"تعديل", غير:"تعديل", اغير:"تعديل", edit:"تعديل", change:"تعديل", fix:"تعديل",
+    ضاعت:"ضياع", ضاع:"ضياع", راحت:"ضياع", طارت:"ضياع", اختفت:"ضياع", اختفى:"ضياع", gone:"ضياع", lost:"ضياع", missing:"ضياع",
+    مزبوط:"مزبوط", صح:"مزبوط", غلط:"غلط", خطا:"غلط", wrong:"غلط", incorrect:"غلط",
+    اشعار:"اشعار", اشعارات:"اشعار", تنبيه:"اشعار", تنبيهات:"اشعار", notification:"اشعار", notifications:"اشعار",
+    باسورد:"كلمهسر", password:"كلمهسر", الباسورد:"كلمهسر", مرور:"كلمهسر", سر:"كلمهسر",
+    ضريبه:"ضريبه", tax:"ضريبه", vat:"ضريبه",
+    طابعه:"طابعه", طباعه:"طابعه", اطبع:"طابعه", print:"طابعه", printer:"طابعه",
+    واتساب:"واتساب", whatsapp:"واتساب", واتس:"واتساب",
+    تقرير:"تقارير", تقارير:"تقارير", report:"تقارير", reports:"تقارير",
+    ربح:"ربح", ارباح:"ربح", ربحت:"ربح", profit:"ربح",
+    مشروع:"مشروع", مشاريع:"مشروع", فرع:"مشروع", فروع:"مشروع", project:"مشروع", branch:"مشروع",
+    تواصل:"تواصل", اتواصل:"تواصل", احكي:"تواصل", كلموني:"تواصل", contact:"تواصل", support:"تواصل", دعم:"تواصل",
+    مشكله:"مشكله", مشاكل:"مشكله", problem:"مشكله", issue:"مشكله", error:"مشكله",
+    اعمل:"يعمل", اسوي:"يعمل", سوي:"يعمل", نعمل:"يعمل", make:"يعمل", create:"يعمل",
+    سجل:"تسجيل", اسجل:"تسجيل", سجلت:"تسجيل", record:"تسجيل", add:"اضافه", ضيف:"اضافه", اضيف:"اضافه", اضافه:"اضافه",
+    امنه:"امان", امان:"امان", امن:"امان", خصوصيه:"امان", privacy:"امان", safe:"امان",
+    اجازه:"اجازه", اجازات:"اجازه", leave:"اجازه", vacation:"اجازه",
+    الغي:"حذف", الغاء:"حذف", الغيت:"حذف", cancel:"حذف", انمسح:"حذف", انمسحت:"حذف", انحذف:"حذف", انحذفت:"حذف",
+    تاجر:"مورد", التاجر:"مورد", موزع:"مورد", الموزع:"مورد", تجار:"مورد",
+    مشاهد:"مشاهد", يشوف:"مشاهد", يتفرج:"مشاهد", view:"مشاهد", viewer:"مشاهد",
+    تنزيل:"تصدير", نزل:"تصدير", تصدير:"تصدير", صدر:"تصدير", export:"تصدير", download:"تصدير",
+    تكرر:"متكرر", بتكرر:"متكرر", يتكرر:"متكرر", متكرر:"متكرر", مكرر:"متكرر", repeat:"متكرر", recurring:"متكرر",
+    حفظ:"يحفظ", يحفظ:"يحفظ", بيحفظ:"يحفظ", بتنحفظ:"يحفظ", ينحفظ:"يحفظ", انحفظ:"يحفظ", بينحفظ:"يحفظ", save:"يحفظ", saving:"يحفظ",
+    مرحبا:"مرحبا", اهلا:"مرحبا", هلا:"مرحبا", سلام:"مرحبا", hi:"مرحبا", hello:"مرحبا",
+    نت:"انترنت", انترنت:"انترنت", internet:"انترنت", offline:"انترنت",
+    فلوس:"مال", مصاري:"مال", money:"مال", كاش:"مال",
+    جوال:"جوال", تلفون:"جوال", موبايل:"جوال", phone:"جوال",
+  };
+  const PRE = ["وبال","فبال","وال","بال","كال","فال","عال","لل","ال","و","ب","ل","ف","ك"];
+  const SUF = ["تهم","اتهم","كم","هم","ها","نا","ات","ين","ون","يه","ته","ه","ي","ك"];
+  const STOP = new Set(["بده","بدها","بدهم","عنا","عندنا","الي","لي","the","a","an","is","are","do","does","i","my","me","you","your","it","to","of","in","on","for","with","and","or","this","that","be","at","from","please","im","we","our","there","have","has","will",
+    "في","من","على","عن","الى","الي","انا","انت","هو","هي","هل","اذا","لو","يا","مع","هاد","هذا","هذه","هاي","هيك","عشان","او","ولا","بس","كل","اشي","شي","عندي","عندك","فيه","الو","مش","ما","لا","اللي","يلي","دفتر","التطبيق","البرنامج","app","daftar"]);
+  const QW = new Set(["ماذا","كيف","كم","لماذا","اين","اريد","يمكن"]);
+  const norm = s => String(s||"").toLowerCase().replace(/[ً-ٰـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ة/g,"ه").replace(/ى/g,"ي").replace(/ؤ/g,"و").replace(/ئ/g,"ي")
+    .replace(/[٠-٩]/g, d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/كلمه\s+(ال)?سر/g,"كلمهسر").replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/g," ").trim();
+  function near(a,b){
+    if(a===b) return 1; if(a.length<4 || b.length<4 || a[0]!==b[0] || Math.abs(a.length-b.length)>1) return 0;
+    let d = 0; const n = Math.max(a.length,b.length);
+    for(let i=0,j=0; i<a.length || j<b.length;){ if(a[i]===b[j]){ i++; j++; continue; } d++; if(d>1) return 0; if(a.length>b.length) i++; else if(b.length>a.length) j++; else { i++; j++; } }
+    return d<=1 && n>=5 ? 0.8 : 0;
+  }
+  // bare words the guide knows: never cut a letter off these (كاشير is not ك + اشير)
+  const VOC = new Set(Object.values(KW).join(" ").split(" ").map(w=>norm(w)).filter(w=>w.length>=4));
+  const SYNK = Object.keys(SYN).filter(k=>k.length>=5);
+  const AR = /[\u0600-\u06FF]/;
+  function stem(w){
+    if(SYN[w]) return SYN[w]; if(VOC.has(w)) return w; let x = w;
+    if(AR.test(x)){
+      for(const p of PRE) if(x.startsWith(p) && x.length-p.length>=3){ const y = x.slice(p.length); if(SYN[y]) return SYN[y]; if(VOC.has(y)) return y; x = y; break; }
+      for(const s of SUF) if(x.endsWith(s) && x.length-s.length>=3){ const y = x.slice(0,-s.length); if(SYN[y]) return SYN[y]; if(VOC.has(y)) return y; x = y; break; }
+    } else if(/^[a-z]+$/.test(x) && x.length>4) x = x.replace(/(ing|es|s)$/,"");
+    if(SYN[x]) return SYN[x];
+    if(x.length>=5){ const k = SYNK.find(k=>near(x,k)); if(k) return SYN[k]; }   // one-letter typos of known words
+    return x;
+  }
+  const toks = s => norm(s).split(" ").filter(w=>w && !STOP.has(w)).map(stem).filter(w=>(w.length>1 || /\d/.test(w)) && !QW.has(w));
+  const grams = s => { const t = " "+norm(s)+" ", g = new Set(); for(let i=0;i<t.length-2;i++) g.add(t.slice(i,i+3)); return g; };
+  const DOCS = [], DF = new Map();
+  KB.forEach((it,ix)=>it.q.forEach(q=>{ const w = new Set(toks(q)); DOCS.push({ix,w,g:grams(q)}); w.forEach(x=>DF.set(x,(DF.get(x)||0)+1)); }));
+  const N = DOCS.length, idf = w => Math.log(1 + N/(DF.get(w)||0.5));
+  const BAG = KB.map(it=>{ const m = new Map(), add = (s,wt)=>toks(s).forEach(w=>m.set(w, Math.max(m.get(w)||0, wt)));
+    add(it.a.replace(/\[([^\]]+)\]\([^)]*\)/g,"$1"),0.4); add(KW[it.id]||"",1); it.q.forEach(q=>add(q,1)); return m; });
+  const BDF = new Map(); BAG.forEach(m=>m.forEach((_,w)=>BDF.set(w,(BDF.get(w)||0)+1)));
+  const bidf = w => Math.log(1 + KB.length/(BDF.get(w)||0.5));
+  function match(text){
+    const qw = [...new Set(toks(text))], qg = grams(text);
+    if(!qw.length) return {best:null, top:[], score:0};
+    const score = new Array(KB.length).fill(0);
+    DOCS.forEach(d=>{
+      let s = 0, tot = 0; d.w.forEach(w=>tot+=idf(w));
+      qw.forEach(q=>{ let m = 0, bw = q; d.w.forEach(w=>{ const v = near(q,w); if(v>m){ m = v; bw = w; } }); if(m) s += m*idf(bw); });
+      const cover = tot ? s/tot : 0, qcover = s/qw.reduce((a,q)=>a+idf(q),0);
+      let inter = 0; qg.forEach(g=>{ if(d.g.has(g)) inter++; });
+      const tri = inter/(qg.size + d.g.size - inter || 1), v = 0.3*cover + 0.55*qcover + 0.5*tri;
+      if(v>score[d.ix]) score[d.ix] = v;
+    });
+    const qsum = qw.reduce((a,q)=>a+bidf(q),0) || 1;
+    BAG.forEach((m,i)=>{ let s = 0; qw.forEach(q=>{ let best = m.get(q)||0; if(!best) m.forEach((wt,w)=>{ const v = near(q,w); if(v*wt>best) best = v*wt; }); s += best*bidf(q); });
+      score[i] = 0.55*score[i] + 0.6*(s/qsum); });
+    const ranked = score.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]);
+    return { best: ranked[0][0]>=0.32 ? KB[ranked[0][1]] : null, score: ranked[0][0], top: ranked.slice(0,3).filter(r=>r[0]>0.14).map(r=>KB[r[1]]) };
+  }
+  const OFF = /(^|\s)(ال)?(طقس|مباراه|كوره|اغنيه|نكته|طبخه|طبخ|وصفه|سياسه|ذهب|بورصه|انتخابات|فيلم|مسلسل|weather|football|recipe|joke|movie|gold|bitcoin)(\s|$)/;
+  function answer(text){
+    const n = norm(text); if(!n) return null;
+    if(OFF.test(n)) return {id:"off", miss:true, f:["invoice","attendance","team"]};
+    const m = match(text);
+    if(m.best) return {id:m.best.id, item:m.best, score:m.score, esc:!!m.best.esc, f:m.best.f||[]};
+    return {id:null, miss:true, score:m.score, f:(m.top.length ? m.top.map(x=>x.id) : ["invoice","attendance","team"]).slice(0,3)};
+  }
+  const byId = id => KB.find(x=>x.id===id);
+  return { KB, answer, byId, norm, toks };
+})();
+
+/* ---------- the "Ask" pane inside the support panel ---------- */
+Object.assign(L, {
+  botTab:["اسأل","Ask"], botTeamTab:["رسالة للفريق","Message the team"],
+  botHello:["أهلاً! أنا مساعد دفتر 👋 اسألني بأي طريقة بتحكيها: كيف أعمل فاتورة؟ كيف أضيف محاسب؟ وين الضمان؟\nوإذا ما قدرت أساعدك، بوصّلك بفريق الدعم بضغطة.","Hi! I'm Daftar's assistant 👋 Ask me anything the way you'd say it: how do I make an invoice? add my accountant? social security?\nIf I can't help, I'll pass you to the support team in one tap."],
+  botPh:["اكتب سؤالك…","Type your question…"], botAsk:["اسأل","Ask"],
+  botMiss:["ما لقيت جواب أكيد لهالسؤال 🤔 جرّب تكتبه بطريقة ثانية، أو ابعته لفريق الدعم وبيردّوا عليك هون وبإشعار على تلفونك.","I couldn't find a sure answer to that 🤔 Try asking another way, or send it to the support team; they'll reply here and on your phone."],
+  botOff:["أنا بجاوب عن دفتر بس 🙂 اسألني عن الفواتير، الدوام، الرواتب، أو أي إشي بالتطبيق.","I only answer about Daftar 🙂 Ask me about invoices, attendance, payroll, or anything in the app."],
+  botMaybe:["يمكن قصدك:","Maybe you mean:"], botHelped:["انحلّت ✓","That helped ✓"], botToTeam:["احكي مع الفريق","Talk to the team"],
+  botThanks:["تمام، بخدمتك 🌷","Great, glad to help 🌷"], botSendQ:["ابعت سؤالي للفريق","Send my question to the team"],
+  botCarry:["رح نبعت محادثتك مع المساعد كمان، عشان الفريق يفهم بسرعة.","We'll include your chat with the assistant so the team gets it quickly."],
+  demoNoTeam:["هاي نسخة تجريبية، فالرسائل ما بتوصل للفريق من هون. نزّل دفتر وسجّل، وبتقدر تحكي مع فريق الدعم مباشرة.","This is a demo, so messages don't reach the team from here. Get Daftar and sign up to talk to support directly."], demoGet:["نزّل دفتر","Get Daftar"],
+  supPushAsk:["بدك يوصلك إشعار على تلفونك أول ما نرد؟","Want a notification on your phone when we reply?"], supPushOn:["شغّل الإشعارات","Turn on notifications"],
+});
+function botLink(href, label){ // only known pages and actions become buttons
+  let m = /^#go:([a-z]+)(?:\/([a-z]+))?$/.exec(href);
+  if(m && ["home","units","team","money"].includes(m[1])) return `<button type="button" class="chip-btn bot-go" data-act="botGo" data-id="${esc(m[1]+(m[2]?"/"+m[2]:""))}">${esc(label)}</button>`;
+  m = /^#do:([A-Za-z]+)(?::([A-Za-z]+))?$/.exec(href);
+  const ok = ["q","newInv","newExp","newInc","newVoucher","newParty","newItem","newUnit","smNew","labels","pos","items","settings","team","push","move","recurring","changePw","exportXls","exportAll","activity","appts","loySet","account","ssSheet","leave"];
+  if(m && ok.includes(m[1]) && typeof A[m[1]]==="function" && CID) return `<button type="button" class="chip-btn bot-go" data-act="botDo" data-id="${esc(m[1]+(m[2]?":"+m[2]:""))}">${esc(label)}</button>`;
+  return "";
+}
+function botText(s){ // escape, then **bold**, line breaks, and safe in-app buttons
+  const units = (typeof tv==="function" ? tv("navUnits") : t("navUnits")).replace(/^ال/,"");
+  s = String(s||"").replace(/\{units\}/g, units);
+  const links = []; s = s.replace(/\[([^\]]+)\]\((#[^)\s]+)\)/g, (_,l,h)=>{ links.push(botLink(h,l)); return "\u0000"+(links.length-1)+"\u0000"; });
+  let h = esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/\n/g,"<br>");
+  h = h.replace(/\u0000(\d+)\u0000/g, (_,i)=>links[+i]).replace(/(<br>)+$/,"");
+  return h;
+}
+function botItemText(it){ return LANG==="en" ? it.e : it.a; }
+function botLabel(id){ const it = HELP.byId(id); if(!it) return ""; return (LANG==="en" ? it.q.find(x=>/^[a-z]/i.test(x)) : it.q[0]) || it.q[0]; }
+function botChips(ids){ return (ids||[]).filter(id=>HELP.byId(id)).slice(0,3).map(id=>`<button type="button" class="chip-btn" data-act="botAskId" data-id="${esc(id)}">${esc(botLabel(id))}</button>`).join(""); }
+function botPane(){
+  const c = S.chat; if(!c.bot) c.bot = [];
+  const msgs = c.bot.map((m,i)=>{
+    if(m.who==="me") return `<div class="bubble me">${esc(m.text)}</div>`;
+    const last = i===c.bot.length-1;
+    let h = `<div class="bubble ai">${botText(m.text)}</div>`;
+    if(last && m.chips && m.chips.length) h += `<div class="sugg">${m.maybe?`<span class="sub">${t("botMaybe")}</span>`:""}${botChips(m.chips)}</div>`;
+    if(last && m.ask) h += `<div class="bot-acts">${m.miss||m.esc?`<button type="button" class="btn sm primary" data-act="botEscalate">${icon("send")}${t(m.miss?"botSendQ":"botToTeam")}</button>`:`<button type="button" class="btn sm ghost" data-act="botHelped">${t("botHelped")}</button><button type="button" class="btn sm ghost" data-act="botEscalate">${t("botToTeam")}</button>`}</div>`;
+    return h;
+  }).join("");
+  return `<div class="msgs" id="msgs">${msgs}</div>
+    <form class="composer" id="botForm" autocomplete="off"><textarea id="botInput" rows="1" maxlength="300" placeholder="${esc(t("botPh"))}" aria-label="${esc(t("botPh"))}"></textarea><button class="send" type="submit" aria-label="${t("botAsk")}">${icon("send")}</button></form>`;
+}
+function botStart(){ const c = S.chat; if(!c.bot || !c.bot.length) c.bot = [{who:"bot", text:t("botHello"), chips:["invoice","attendance","team"]}]; }
+function botAsk(text, id){
+  text = String(text||"").trim().slice(0,300); if(!text) return;
+  const c = S.chat; botStart(); c.bot.push({who:"me", text}); c.lastQ = text;
+  const r = id ? {id, item:HELP.byId(id), esc:!!(HELP.byId(id)||{}).esc, f:(HELP.byId(id)||{}).f||[]} : HELP.answer(text);
+  if(r && r.item) c.bot.push({who:"bot", text:botItemText(r.item), chips:r.f, ask:r.item.id!=="hi" && r.item.id!=="thanks", esc:r.esc, id:r.item.id});
+  else c.bot.push({who:"bot", text:t(r && r.id==="off" ? "botOff" : "botMiss"), chips:r ? r.f : [], maybe:!!(r && r.f && r.f.length && r.id!=="off"), ask:true, miss:true});
+  if(c.bot.length > 40) c.bot = c.bot.slice(-40);
+  try{ (window.dtrack||function(){})(r && r.item ? "bot_hit" : "bot_miss"); }catch(e){}
+  renderChat();
+}
+// what the team sees: the last few turns with the assistant, then the user's message
+function botTranscript(){
+  return (S.chat.bot||[]).slice(1).slice(-10).map(m=>({role:m.who==="me"?"user":"ai", text:String(m.text||"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").slice(0,1500)}));
+}
+const pingPush = () => { try{ if(sb && sb.functions) sb.functions.invoke("push", {body:{mode:"ping"}}).catch(()=>{}); }catch(e){} };
+function pushNudge(){ // after writing to the team: offer reply notifications once
+  if(typeof pushOk!=="function" || !CID) return "";
+  const ios = typeof isIOS==="function" && isIOS() && typeof isStandalone==="function" && !isStandalone();
+  if(!ios && (!pushOk() || Notification.permission!=="default")) return "";
+  if(lsGet("supPushAsked",0)) return "";
+  return `<div class="alert info sup-push">${icon("bell")}<span>${ios ? t("pushIos") : t("supPushAsk")}</span>${ios?"":`<button type="button" class="btn sm primary" data-act="supPushOn">${t("supPushOn")}</button>`}</div>`;
+}
+Object.assign(A, {
+  botAskId: id => botAsk(botLabel(id), id),
+  botHelped: () => { const c = S.chat, m = c.bot && c.bot[c.bot.length-1]; if(m) m.ask = false; c.bot.push({who:"bot", text:t("botThanks")}); renderChat(); },
+  botEscalate: () => { const c = S.chat; c.draft = c.lastQ || ""; c.carry = true; c.mode = CID ? "new" : "human"; c.tid = null; renderChat();
+    setTimeout(()=>{ const i = document.getElementById(CID ? "nt_msg" : "h_msg"); if(i){ i.focus(); try{ i.setSelectionRange(i.value.length, i.value.length); }catch(e){} } }, 60); },
+  botGo: id => { const [v, tab] = String(id).split("/"); closeChat(); closeSheet && closeSheet(); S.view = v; if(tab) S.btab = tab; render(); window.scrollTo(0,0); },
+  botDo: id => { const [a, x] = String(id).split(":"); closeChat(); if(typeof A[a]==="function") A[a](x); },
+  supPushOn: async () => { lsSet("supPushAsked",1); const ok = await pushEnable(); if(ok) toast(t("pushSaved")); renderChat(); },
+});
+document.addEventListener("submit", e=>{ if(e.target.id==="botForm"){ e.preventDefault(); const i = document.getElementById("botInput"), v = i.value; i.value = ""; botAsk(v); setTimeout(()=>{ const j = document.getElementById("botInput"); if(j) j.focus(); }, 30); } });
+document.addEventListener("keydown", e=>{ if(e.target.id==="botInput" && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); e.target.form.requestSubmit(); } });
+// opened from a "the team replied" notification
+(function(){ if(!/[?&]support=1/.test(location.search)) return; let n = 0;
+  const tick = setInterval(()=>{ if(++n>120) return clearInterval(tick);
+    if(typeof S!=="undefined" && S.screen==="app" && S.ready){ clearInterval(tick); try{ history.replaceState(null,"",location.pathname); }catch(e){} openChat("tickets"); markTicketsSeen(); } }, 250); })();

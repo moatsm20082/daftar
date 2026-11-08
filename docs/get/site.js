@@ -127,8 +127,8 @@
   function loadChat() {
     if (window.DaftarChat) return Promise.resolve();
     const load = (src) => new Promise((ok, no) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
-    if (!loading) loading = (EN ? load("/get/chat-en.js?v=1") : Promise.resolve()).then(() => load("/get/chat.js?v=3"));
+    if (!loading) loading = (EN ? load("/get/chat-en.js?v=2") : Promise.resolve()).then(() => load("/get/chat.js?v=4"));
     return loading;
   }
-  ask.addEventListener("click", () => { loadChat().then(() => { window.DaftarChat.open(ask); T("chat_open"); }).catch(() => toast(L("ما قدرنا نفتح المساعد. راسلنا على hello@daftarapp.co", "Couldn't open the assistant. Email hello@daftarapp.co"))); });
+  ask.addEventListener("click", () => { loadChat().then(() => { window.DaftarChat.open(ask); T("chat_open"); }).catch(() => toast(L("ما قدرنا نفتح المساعد. راسلنا على daftarapp.jo@gmail.com", "Couldn't open the assistant. Email daftarapp.jo@gmail.com"))); });
 })();

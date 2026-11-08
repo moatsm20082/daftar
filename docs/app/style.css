@@ -550,3 +550,13 @@ a.mi{text-decoration:none;color:var(--ink)}
 button.ap-card{width:100%;text-align:start;cursor:pointer}
 /* waiting for internet */
 .ob-badge{position:fixed;bottom:calc(150px + env(safe-area-inset-bottom,0px));inset-inline-start:16px;z-index:12;border:0;border-radius:999px;padding:8px 14px;background:var(--warn-soft,#FBF0DC);color:var(--warn,#9A5B00);font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.18)}
+/* support assistant (v15) */
+.three-seg{grid-template-columns:1fr 1fr 1fr}
+.three-seg button{font-size:.84rem;padding-inline:4px}
+.msgs .sugg{padding:0;align-self:flex-start;max-width:92%}
+.msgs .sugg .sub{width:100%;font-size:.82rem}
+.bubble.ai .bot-go{display:inline-flex;margin-top:8px;background:var(--surface);color:var(--brand-text)}
+.bot-acts{display:flex;flex-wrap:wrap;gap:8px;align-self:flex-start}
+.bot-acts .btn{min-height:36px}
+.sup-push{align-items:center;flex-wrap:wrap;margin:0 0 4px}
+.sup-push span{flex:1;min-width:180px}

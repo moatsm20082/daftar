@@ -262,6 +262,7 @@ const COLS = ["units","staff","attendance","payments","expenses","income"];
 
 /* ===== icons (inline, stroke = currentColor) ===== */
 const ICON = {
+  bell:'<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
   home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   folder:'<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v10a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
   users:'<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.6 14.2A4.5 4.5 0 0 1 21 18.6"/>',
@@ -373,8 +374,19 @@ function statsView(){
     <div class="alert info">${icon("shield")}<span>${t("aPrivacy")}</span></div>
     <div class="list">${list.map(c=>`<div class="crow"><div class="who"><span class="avatar">${esc(String(c.name||"?").trim().slice(0,2))}</span><div class="m"><b>${esc(c.name)}</b><span class="sub ltr">${esc(c.email||"")}</span>
       <span class="sub">${esc((P[c.type]||P.other).name[LANG==="en"?1:0])} · ${c.phone?`<span class="num">${esc(c.phone)}</span> · `:""}${t("aJoined",{d:esc(String(c.created_at).slice(0,10))})} · ${t("aLast",{x:ago(c.last_activity)})} · ${t("aCounts",{u:`<span class="num">${Number(c.units)||0}</span>`,s:`<span class="num">${Number(c.staff)||0}</span>`})}</span></div></div>
-      ${c.email?`<button class="btn sm" data-act="reset" data-id="${esc(c.email)}">${icon("key")}${t("aSendReset")}</button>`:""}</div>`).join("") || `<span class="hint">${t("aNone")}</span>`}</div></div>`;
+      <div class="two">${c.email?`<button class="btn sm" data-act="reset" data-id="${esc(c.email)}">${icon("key")}${t("aSendReset")}</button>`:""}<button class="btn sm ghost" data-act="trash" data-id="${esc(c.id)}">${LANG==="en"?"Deleted items":"المحذوفات"}</button></div></div>
+      ${CS.trashFor===c.id ? trashPanel(c) : ""}`).join("") || `<span class="hint">${t("aNone")}</span>`}</div></div>`;
   return h;
+}
+const COLN = {units:["ملفات/مشاريع","projects"],staff:["موظفين","staff"],attendance:["دوام","attendance"],payments:["رواتب وسلف","pay & advances"],expenses:["مصاريف","expenses"],income:["دخل","income"],invoices:["فواتير","invoices"],vouchers:["سندات","vouchers"],parties:["زباين وموردين","contacts"],items:["أصناف","items"],cheques:["شيكات","cheques"],journals:["قيود","journal"]};
+function trashPanel(c){
+  const T = CS.trash, en = LANG==="en";
+  if(!T) return `<div class="panel"><span class="sub">${t("loading")}</span></div>`;
+  return `<div class="panel trash"><span class="label">${en?"Deleted in the last 30 days (counts only)":"اللي انحذف آخر 30 يوم (أعداد بس، بدون أرقامهم)"}</span>
+    ${T.length ? `<div class="kv">${T.map(x=>`<div><span>${esc((COLN[x.col]||[x.col,x.col])[en?1:0])}</span><b class="num">${fmt(x.n)}</b></div>`).join("")}</div>
+      <p class="sub">${en?"Restoring brings back each deleted record as it last was. Nothing existing is overwritten.":"الاسترجاع بيرجّع كل سجل محذوف بآخر نسخة إله، وما بيكتب فوق أي إشي موجود."}</p>
+      <div class="two"><button class="btn primary" data-act="trashRestore" data-id="${esc(c.id)}">${en?"Restore all":"رجّع الكل"}</button><button class="btn ghost" data-act="trashClose">${t("back")}</button></div>`
+    : `<span class="sub">${en?"Nothing deleted in the last 30 days.":"ما انحذف إشي آخر 30 يوم."}</span><button class="btn ghost sm" data-act="trashClose">${t("back")}</button>`}</div>`;
 }
 function siteView(){
   const a = CS.site; const days = CS.siteDays || 30;
@@ -417,18 +429,53 @@ function ticketsView(){
   return h + `<div class="panel"><div class="list">${list.map(x=>`<button class="row" data-act="topen" data-id="${esc(x.id)}"><div class="m"><b>${esc(x.subject||"—")}</b><span class="sub">${esc(x.company||t("aPublic"))} · ${ago(x.updated_at)}</span></div><span class="pill ${x.status==="answered"?"good":x.status==="closed"?"":"warn"}">${t("tStatus_"+x.status)}</span></button>`).join("")}</div></div>`;
 }
 function pushView(){
-  const P = CS.push, en = LANG==="en";
-  let h = `<div class="panel"><span class="label">${en?"Send a notification to users' phones":"ابعت إشعار لتلفونات المستخدمين"}</span>
-    ${P?`<div class="kv"><div><span>${en?"Devices":"أجهزة مشتركة"}</span><b class="num">${fmt(P.subs||0)}</b></div><div><span>${en?"People":"أشخاص"}</span><b class="num">${fmt(P.users||0)}</b></div></div>`:`<span class="sub">${t("loading")}</span>`}
+  const P = CS.push, en = LANG==="en", H = CS.health, me = CS.myDevice;
+  const tx = (a,b) => en ? b : a;
+  // 1) this phone: support alerts
+  let h = `<div class="panel"><span class="label">${icon("bell")} ${tx("تنبيهات الدعم على هالجهاز","Support alerts on this device")}</span>
+    <p class="sub">${tx("أول ما حدا يبعت رسالة للدعم أو يرد على تذكرة، بيوصلك إشعار على هالتلفون فيه اسم الشركة والرسالة.","When someone writes to support or replies to a ticket, this phone gets a notification with the business name and message.")}</p>
+    ${!admPushOk() ? `<div class="alert warn">${icon("alert")}<span>${admIos() ? tx("على الآيفون: افتح هالصفحة بـ Safari ← زر المشاركة ← «إضافة إلى الشاشة الرئيسية»، وافتحها من الأيقونة، وبعدها ارجع لهون.","On iPhone: open this page in Safari → Share → “Add to Home Screen”, open it from the icon, then come back here.") : tx("هالمتصفح ما بيدعم الإشعارات. جرّب Chrome أو Safari.","This browser can't do notifications. Try Chrome or Safari.")}</span></div>`
+      : typeof Notification!=="undefined" && Notification.permission==="denied" ? `<div class="alert bad">${icon("alert")}<span>${tx("المتصفح مانع الإشعارات لهالموقع. اسمح فيها من إعدادات المتصفح.","Notifications are blocked for this site. Allow them in browser settings.")}</span></div>`
+      : `<div class="alert ${me?"good":"info"}">${icon(me?"check":"bell")}<span>${me ? tx("شغّالة على هالجهاز ✓","On for this device ✓") : tx("مطفية على هالجهاز","Off on this device")}</span></div>
+        <div class="two">${me ? `<button class="btn" data-act="admPushTest">${icon("send")}${tx("جرّب","Test")}</button><button class="btn ghost" data-act="admPushOff">${tx("وقّفها","Turn off")}</button>` : `<button class="btn primary" data-act="admPushOn">${icon("bell")}${tx("شغّل التنبيهات على هالجهاز","Turn on for this device")}</button>`}</div>`}
+    ${P ? `<span class="sub">${tx("أجهزة الإدارة المشتركة:","Admin devices:")} <b class="num">${fmt(P.admin_devices||0)}</b></span>` : ""}</div>`;
+  // 2) is sending set up?
+  h += `<div class="panel"><span class="label">${tx("حالة الإشعارات","Notification status")}</span>
+    ${H ? (H.vapid ? `<div class="alert good">${icon("check")}<span>${tx("السيرفر جاهز ويبعت إشعارات ✓","Server is set up and sending ✓")}</span></div>`
+                   : `<div class="alert bad">${icon("alert")}<span>${tx("مفاتيح الإشعارات (VAPID) ناقصة بإعدادات الـ Edge Function. بدون هيك ما في إشي بينبعت.","The VAPID keys are missing in the Edge Function settings. Nothing can be sent until they're added.")}</span></div>`)
+        : CS.healthErr ? `<div class="alert bad">${icon("alert")}<span>${tx("ما قدرت أوصل لسيرفر الإشعارات (Edge Function push). لازم ينرفع آخر إصدار.","Couldn't reach the push server (Edge Function). Deploy the latest version.")}</span></div>` : `<span class="sub">${t("loading")}</span>`}
+    ${P?`<div class="kv"><div><span>${tx("أجهزة مستخدمين","User devices")}</span><b class="num">${fmt(P.subs||0)}</b></div><div><span>${tx("أشخاص","People")}</span><b class="num">${fmt(P.users||0)}</b></div>
+      <div><span>${tx("شركات مفعّلة","Businesses with alerts")}</span><b class="num">${fmt(P.companies||0)} / ${fmt(P.all_companies||0)}</b></div><div><span>${tx("بيقبلوا الأخبار","Accept news")}</span><b class="num">${fmt(P.news||0)}</b></div>
+      <div><span>${tx("آخر إشعار وصل","Last delivered")}</span><b>${P.last_ok?when(P.last_ok):"—"}</b></div></div>
+      <p class="sub">${tx("الإشعار بيوصل بس للي شغّل الإشعارات من التطبيق (⚙ ← الإشعارات). التطبيق بيعرضها عليهم بعد أول استعمال وبعد ما يبعتوا للدعم.","Only people who turned notifications on in the app get them (⚙ → Notifications). The app offers it after first use and after writing to support.")}</p>`:""}</div>`;
+  // 3) send now
+  h += `<div class="panel"><span class="label">${tx("ابعت إشعار هلأ","Send now")}</span>
     <form id="pushForm" class="aform">
-      <label class="lbl">${en?"Title":"العنوان"}<input name="title" maxlength="80" required placeholder="${en?"New in Daftar":"جديد بدفتر"}"></label>
-      <label class="lbl">${en?"Message":"الرسالة"}<textarea name="body" rows="3" maxlength="400" required placeholder="${en?"Cash radar is here…":"صار عندك رادار السيولة…"}"></textarea></label>
-      <label class="lbl">${en?"Opens (path on daftarapp.co)":"بيفتح (مسار على daftarapp.co)"}<input name="url" maxlength="120" value="/app/" class="ltr"></label>
-      <div class="seg" role="group"><label><input type="radio" name="target" value="all" checked> ${en?"Everyone":"الكل"}</label><label><input type="radio" name="target" value="owners"> ${en?"Business owners":"أصحاب الشركات بس"}</label></div>
-      <p class="sub">${en?"Only people who allowed news get it. Max 5 a day.":"بيوصل بس للي سامح بالأخبار. الحد 5 باليوم."}</p>
-      <button class="btn primary" type="submit">${en?"Send":"ابعت"}</button></form></div>`;
+      <label class="lbl">${tx("العنوان","Title")}<input name="title" maxlength="80" required placeholder="${tx("جديد بدفتر","New in Daftar")}"></label>
+      <label class="lbl">${tx("الرسالة","Message")}<textarea name="body" rows="3" maxlength="400" required placeholder="${tx("صار عندك مساعد بيجاوبك عن أي سؤال…","There's now an assistant that answers any question…")}"></textarea></label>
+      <label class="lbl">${tx("بيفتح (مسار على daftarapp.co)","Opens (path on daftarapp.co)")}<input name="url" maxlength="120" value="/app/" class="ltr"></label>
+      <div class="seg" role="group"><label><input type="radio" name="target" value="all" checked> ${tx("الكل","Everyone")}</label><label><input type="radio" name="target" value="owners"> ${tx("أصحاب الشركات بس","Business owners")}</label></div>
+      <p class="sub">${tx("بيوصل بس للي سامح بالأخبار. الحد 5 باليوم.","Only people who allowed news get it. Max 5 a day.")}</p>
+      <button class="btn primary" type="submit">${tx("ابعت","Send")}</button></form></div>`;
+  // 4) scheduled
+  const SC = CS.sched || [], rep = {none:tx("مرة وحدة","Once"), daily:tx("كل يوم","Daily"), weekly:tx("كل أسبوع","Weekly")};
+  const dflt = new Date(Date.now()+3600e3); dflt.setMinutes(0,0,0); const pad = n => String(n).padStart(2,"0");
+  const local = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  h += `<div class="panel"><span class="label">${icon("clock")} ${tx("إشعارات مجدولة","Scheduled notifications")}</span>
+    <p class="sub">${tx("بتنبعت لحالها بالوقت اللي بتحدده (بتوقيت جهازك)، مرة وحدة أو كل يوم أو كل أسبوع.","Sent automatically at the time you set (your device time), once, daily or weekly.")}</p>
+    <form id="schedForm" class="aform">
+      <label class="lbl">${tx("العنوان","Title")}<input name="title" maxlength="80" required placeholder="${tx("صباح الخير من دفتر","Good morning from Daftar")}"></label>
+      <label class="lbl">${tx("الرسالة","Message")}<textarea name="body" rows="2" maxlength="400" required placeholder="${tx("لا تنسى تسجّل دوام ومصاريف اليوم","Don't forget today's attendance and expenses")}"></textarea></label>
+      <label class="lbl">${tx("الوقت","When")}<input name="when" type="datetime-local" required value="${local(dflt)}" class="ltr"></label>
+        <label class="lbl">${tx("التكرار","Repeat")}<select name="repeat"><option value="none">${rep.none}</option><option value="daily">${rep.daily}</option><option value="weekly" selected>${rep.weekly}</option></select></label>
+      <label class="lbl">${tx("بيفتح","Opens")}<input name="url" maxlength="120" value="/app/" class="ltr"></label>
+      <div class="seg" role="group"><label><input type="radio" name="target" value="all" checked> ${tx("الكل","Everyone")}</label><label><input type="radio" name="target" value="owners"> ${tx("أصحاب الشركات بس","Business owners")}</label></div>
+      <button class="btn primary" type="submit">${icon("clock")}${tx("جدول","Schedule")}</button></form>
+    ${SC.length ? `<div class="list">${SC.map(x=>`<div class="row"><div class="m"><b>${esc(x.title)}</b><span class="sub">${esc(x.body)}</span>
+      <span class="sub">${x.active ? `${rep[x.repeat]||""} · ${tx("الجاي:","next:")} ${when(x.send_at)}` : tx("خلص / موقوف","Done / paused")} · ${x.target==="owners"?tx("أصحاب الشركات","owners"):tx("الكل","everyone")} · ${tx("انبعت","sent")} <span class="num">${x.sent_count||0}</span></span></div>
+      <div class="two"><button class="btn sm" data-act="schedToggle" data-id="${x.id}">${x.active?tx("وقّف","Pause"):tx("شغّل","Resume")}</button><button class="btn sm ghost" data-act="schedDel" data-id="${x.id}">${tx("احذف","Delete")}</button></div></div>`).join("")}</div>` : ""}</div>`;
   const log = (P && P.log) || [];
-  if(log.length) h += `<div class="panel"><span class="label">${en?"Sent":"اللي انبعت"}</span><div class="list">${log.map(x=>`<div class="row"><div class="m"><b>${esc(x.title)}</b><span class="sub">${esc(x.body)}</span><span class="sub">${ago(x.at)} · ${x.target==="owners"?(en?"owners":"أصحاب الشركات"):(en?"everyone":"الكل")}</span></div><b class="num">${fmt(x.sent)}${x.failed?` <span class="sub">/ ${fmt(x.failed)} ✕</span>`:""}</b></div>`).join("")}</div></div>`;
+  if(log.length) h += `<div class="panel"><span class="label">${tx("اللي انبعت","Sent")}</span><div class="list">${log.map(x=>`<div class="row"><div class="m"><b>${esc(x.title)}</b><span class="sub">${esc(x.body)}</span><span class="sub">${ago(x.at)} · ${esc(String(x.target).replace(/^owners/, tx("أصحاب الشركات","owners")).replace(/^all/, tx("الكل","everyone")))}</span></div><b class="num">${fmt(x.sent)}${x.failed?` <span class="sub">/ ${fmt(x.failed)} ✕</span>`:""}</b></div>`).join("")}</div></div>`;
   return h;
 }
 function auditView(){
@@ -441,7 +488,17 @@ async function loadStats(){ const { data, error } = await sb.rpc("admin_stats");
 async function loadSite(){ const { data, error } = await sb.rpc("admin_site_stats", {p_days: CS.siteDays || 30}); if(error) return guardFail(); CS.site = data;
   const f = await sb.rpc("admin_feature_stats"); CS.features = f.error ? null : f.data; render(); }
 async function loadTickets(){ const { data, error } = await sb.rpc("admin_tickets", {p_status: CS.ticketFilter==="all" ? null : CS.ticketFilter}); if(error) return guardFail(); CS.tickets = data || []; render(); }
-async function loadPush(){ const { data, error } = await sb.rpc("admin_push_info"); if(error) return guardFail(); CS.push = data; render(); }
+async function loadPush(){ const { data, error } = await sb.rpc("admin_push_info"); if(error) return guardFail(); CS.push = data;
+  const sc = await sb.rpc("admin_push_schedules"); CS.sched = sc.error ? [] : (sc.data || []);
+  CS.myDevice = !!(await admSub()); render();
+  try{ const r = await sb.functions.invoke("push", {body:{mode:"health"}}); CS.health = r.error ? null : r.data; CS.healthErr = !!r.error; }catch(e){ CS.health = null; CS.healthErr = true; }
+  if(CS.tab==="push") render(); }
+/* ---------- this phone gets support alerts ---------- */
+const admPushOk = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && !!C.VAPID_PUBLIC_KEY;
+const admIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone===true);
+const admB64 = s => { const p = "=".repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g,"+").replace(/_/g,"/")); return Uint8Array.from(b, c=>c.charCodeAt(0)); };
+async function admReg(){ if(!admPushOk()) return null; return (await navigator.serviceWorker.getRegistration("./")) || await navigator.serviceWorker.register("sw.js", {scope:"./"}); }
+async function admSub(){ try{ const r = await admReg(); return r ? await r.pushManager.getSubscription() : null; }catch(e){ return null; } }
 async function loadAudit(){ const { data, error } = await sb.rpc("admin_audit_list"); if(error) return guardFail(); CS.audit = data || []; render(); }
 async function guardFail(){ await hardLogout(); CS.msg = t("cWrong"); render(); }
 
@@ -464,8 +521,17 @@ async function enterDashboard(){
   if(!who || !who.mfa){ await hardLogout(); CS.msg = t("cWrong"); render(); return; }
   try{ if(!sessionStorage.getItem("adminStart")) sessionStorage.setItem("adminStart", String(Date.now())); }catch(e){}
   sb.rpc("admin_note", {p_action:"login", p_detail:null});
-  CS.screen = "app"; CS.qr = CS.secret = null; CS.msg = ""; render(); loadStats(); loadTickets(); touch();
+  CS.screen = "app"; CS.qr = CS.secret = null; CS.msg = ""; render(); loadStats(); touch();
+  if(!(await openFromHash())) loadTickets();
 }
+// a support alert opens /hq…/#t=<ticket id>: jump straight to that conversation
+async function openFromHash(){
+  const m = /^#t=([0-9a-f-]{36})$/.exec(location.hash); if(!m || CS.screen!=="app") return false;
+  try{ history.replaceState(null,"",location.pathname); }catch(e){}
+  CS.tab = "tickets"; CS.ticketFilter = "all"; CS.ticketId = null; await loadTickets();
+  CS.ticketId = (CS.tickets||[]).some(x=>x.id===m[1]) ? m[1] : null; render(); return true;
+}
+window.addEventListener("hashchange", ()=>{ openFromHash(); });
 async function hardLogout(note){
   if(note && sb){ try{ await sb.rpc("admin_note", {p_action:note, p_detail:null}); }catch(e){} }
   try{ await sb.auth.signOut(); }catch(e){}
@@ -505,11 +571,18 @@ document.addEventListener("submit", async e=>{
       if(error){ let m = ""; try{ m = (await error.context.json()).error; }catch(_){} toast(m==="limit" ? (LANG==="en"?"Daily limit reached (5)":"وصلت الحد اليومي (5)") : t("aFail")); return; }
       toast(LANG==="en" ? `Sent to ${data.sent} devices` : `انبعت لـ ${data.sent} جهاز`); f.reset(); await loadPush();
     }
+    if(f.id==="schedForm"){
+      const E = f.elements, title = E.title.value.trim(), body = E.body.value.trim(), url = E.url.value.trim() || "/app/", target = (f.querySelector('[name="target"]:checked')||{}).value || "all";
+      const at = new Date(E.when.value); if(title.length<2 || body.length<2 || isNaN(at)) return;
+      const { error } = await sb.rpc("admin_push_schedule_save", {p_id:null, p_title:title, p_body:body, p_url:url, p_target:target, p_send_at:at.toISOString(), p_repeat:E.repeat.value, p_active:true});
+      if(error){ toast(/too many/.test(error.message||"") ? (LANG==="en"?"Max 20 active schedules":"الحد 20 إشعار مجدول") : t("aFail")); return; }
+      toast(LANG==="en" ? "Scheduled ✓" : "انجدول ✓"); f.reset(); await loadPush();
+    }
     if(f.id==="replyForm"){
       const close = e.submitter && e.submitter.dataset.close==="1", txt = document.getElementById("replyText").value.trim();
       if(!txt && !close) return;
       const { error } = await sb.rpc("admin_reply", {p_id:CS.ticketId, p_text:txt, p_close:close});
-      if(error) return guardFail(); toast(t("aReplied")); await loadTickets();
+      if(error) return guardFail(); toast(t("aReplied")); try{ sb.functions.invoke("push", {body:{mode:"ping"}}).catch(()=>{}); }catch(_){} await loadTickets();
     }
   } finally { if(btn && btn.isConnected) btn.disabled = false; }
 });
@@ -522,6 +595,31 @@ const ACT = {
   refresh: () => { if(CS.tab==="push") loadPush(); else if(CS.tab==="audit") loadAudit(); else if(CS.tab==="tickets") loadTickets(); else if(CS.tab==="site") loadSite(); else loadStats(); },
   tfilter: id => { CS.ticketFilter = id; CS.ticketId = null; CS.tickets = null; render(); loadTickets(); },
   topen: id => { CS.ticketId = id; render(); }, tback: () => { CS.ticketId = null; render(); },
+  admPushOn: async (_, el) => {
+    if(!admPushOk()) return; el.disabled = true;
+    try{
+      const perm = Notification.permission==="granted" ? "granted" : await Notification.requestPermission();
+      if(perm!=="granted"){ toast(LANG==="en"?"Notifications not allowed":"ما سمحت بالإشعارات"); render(); return; }
+      const r = await admReg(); await navigator.serviceWorker.ready;
+      let sub = await r.pushManager.getSubscription();
+      if(!sub) sub = await r.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:admB64(C.VAPID_PUBLIC_KEY)});
+      const j = sub.toJSON(); const { error } = await sb.rpc("admin_push_subscribe", {p_endpoint:j.endpoint, p_p256dh:j.keys.p256dh, p_auth:j.keys.auth});
+      if(error) throw error; toast(LANG==="en"?"Support alerts on ✓":"تنبيهات الدعم شغّالة ✓");
+    }catch(e){ toast(t("aFail")); }
+    await loadPush();
+  },
+  admPushOff: async () => { const sub = await admSub(); if(sub){ try{ await sb.rpc("admin_push_unsubscribe", {p_endpoint:sub.endpoint}); }catch(e){} try{ await sub.unsubscribe(); }catch(e){} } await loadPush(); },
+  admPushTest: async (_, el) => { el.disabled = true; const r = await admReg(); if(r) await r.showNotification(LANG==="en"?"Daftar · test":"دفتر · تجربة", {body:LANG==="en"?"Support alerts will look like this.":"هيك رح توصلك تنبيهات الدعم.", icon:"/app/icons/icon-192.png", dir:LANG==="en"?"ltr":"rtl"}); el.disabled = false; },
+  schedToggle: async id => { const x = (CS.sched||[]).find(s=>String(s.id)===String(id)); if(!x) return;
+    let at = x.send_at; if(!x.active && new Date(at) < new Date()){ const d = new Date(at), step = x.repeat==="weekly" ? 7*864e5 : 864e5; while(d < new Date()) d.setTime(d.getTime()+step); at = d.toISOString(); }
+    const { error } = await sb.rpc("admin_push_schedule_save", {p_id:x.id, p_title:x.title, p_body:x.body, p_url:x.url, p_target:x.target, p_send_at:at, p_repeat:x.repeat, p_active:!x.active});
+    if(error) toast(t("aFail")); await loadPush(); },
+  schedDel: async (id, el) => { if(!armed(el, t("sure"))) return; const { error } = await sb.rpc("admin_push_schedule_delete", {p_id:Number(id)}); if(error) toast(t("aFail")); await loadPush(); },
+  trash: async (id, el) => { CS.trashFor = id; CS.trash = null; render(); const { data, error } = await sb.rpc("admin_trash_info", {p_company:id}); CS.trash = error ? [] : (data||[]); render(); },
+  trashClose: () => { CS.trashFor = null; CS.trash = null; render(); },
+  trashRestore: async (id, el) => { if(!armed(el, t("sure"))) return; el.disabled = true;
+    const { data, error } = await sb.rpc("admin_restore_deleted", {p_company:id, p_since:new Date(Date.now()-30*864e5).toISOString(), p_col:null});
+    toast(error ? t("aFail") : (LANG==="en" ? `Restored ${data} records` : `رجع ${data} سجل`)); CS.trash = null; ACT.trash(id); },
   reset: async (email, el) => {
     if(!armed(el, t("sure"))) return; el.disabled = true;
     const { error } = await sb.auth.resetPasswordForEmail(email, {redirectTo: C.APP_URL || undefined});
@@ -540,3 +638,8 @@ document.addEventListener("click", e=>{ const el = e.target.closest("[data-act]"
   const { data:{ session } } = await sb.auth.getSession();
   if(session) await afterPassword(); else { CS.screen = "login"; render(); }
 })();
+Object.assign(L, {
+  act_push_device_on:["شغّل تنبيهات الدعم على جهاز","Support alerts on (device)"], act_push_device_off:["وقّف تنبيهات الدعم على جهاز","Support alerts off (device)"],
+  act_push_schedule:["جدول إشعار","Scheduled a notification"], act_push_schedule_del:["حذف إشعار مجدول","Deleted a schedule"],
+  act_trash_view:["فتح محذوفات شركة","Viewed a company's deleted items"], act_trash_restore:["استرجع محذوفات","Restored deleted items"],
+});
