@@ -10,7 +10,7 @@
   document.body.appendChild(b);
   let loading = null;
   b.addEventListener("click", () => {
-    if (!loading) loading = window.DaftarChat ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement("script"); s.src = "/get/chat.js?v=1"; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+    if (!loading) loading = window.DaftarChat ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement("script"); s.src = "/get/chat.js?v=3"; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
     loading.then(() => window.DaftarChat.open(b)).catch(() => { loading = null; });
   });
 })();

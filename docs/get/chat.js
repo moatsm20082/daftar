@@ -8,24 +8,26 @@
    4. scoring each topic by weighted shared words plus letter-trigram similarity for typos. */
 (function () {
   "use strict";
+  // on the English page an English pack (chat-en.js) supplies answers, labels and extra English phrasings
+  const EN = typeof document !== "undefined" && document.documentElement.lang === "en" && window.DaftarChatEN ? window.DaftarChatEN : null;
 
   /* ======================= knowledge base ======================= */
   // q: ways people ask · a: the answer ([text](/link) becomes a link) · f: follow-up suggestions
   const KB = [
     { id: "price", q: ["قديش سعره", "بكم الاشتراك", "هل هو مجاني", "مجاني ولا بمصاري", "كم بدفع بالشهر", "في رسوم", "شو السعر", "بكام البرنامج", "is it free", "how much does it cost", "pricing", "ببلاش", "فيه اشتراك شهري", "لازم ادفع", "بطاقة ائتمان", "هل في نسخة مدفوعة"],
-      a: "دفتر مجاني لأي شركة، بدون بطاقة ولا اشتراك، وبدون حد لعدد الفواتير. [ابدأ مجاناً](/app/)", f: ["what", "start", "move"] },
+      a: "دفتر مجاني لأي شركة، بدون بطاقة ولا اشتراك، وبدون حد لعدد الفواتير. [نزّله ببلاش](/#download)", f: ["what", "start", "move"] },
     { id: "what", q: ["شو هو دفتر", "شو بيعمل التطبيق", "عرفني على البرنامج", "ايش فايدته", "what is daftar", "what does it do", "شو الميزات", "ميزات البرنامج", "شو بقدر اعمل فيه", "برنامج محاسبة", "شو بيقدملي"],
       a: "دفتر برنامج محاسبة وإدارة لشركتك بالعربي، على الجوال والكمبيوتر. فيه: فواتير ضريبية، نقطة بيع بالباركود، مخزون، زباين وموردين وأقساط وشيكات، رواتب ودوام وضمان، محاسبة كاملة، ورادار سيولة بينبهك قبل ما تنقصك المصاري. [كل الميزات](/#features)", f: ["price", "who", "radar"] },
     { id: "who", q: ["بيناسب محل", "بيناسب شغلي", "لأي نوع شركات", "بيصلح لسوبرماركت", "مطعم", "صيدلية", "ورشة", "شركة صغيرة", "شركة توصيل", "مكتب", "who is it for", "does it fit my business", "لمين البرنامج"],
       a: "بيصلح لأي شغل: المحلات والسوبرماركت والصيدليات، المقاولات والورش، المطاعم، شركات الخدمات والمكاتب، والتوصيل. أول ما تسجّل بتختار نوع شغلك، وبتتجهز الأقسام عليه.", f: ["shop", "contract", "start"] },
     { id: "start", q: ["تسجيل شركة جديدة", "بدي افتح حساب لشركتي", "كيف ابلش", "كيف اسجل", "كيف اعمل حساب", "بدي افتح حساب", "التسجيل", "sign up", "create account", "how to start", "كيف افوت عالبرنامج", "رابط التسجيل", "وين اسجل"],
-      a: "افتح [daftarapp.co/app](/app/) واضغط «سجّل شركتك مجاناً»: اسم الشركة، إيميل، وكلمة سر. وبعدها اختار نوع شغلك وخلص. بياخد أقل من دقيقة.", f: ["install", "move", "team"] },
+      a: "[نزّل دفتر](/#download) وافتحه، واضغط «سجّل شركتك مجاناً»: اسم الشركة، إيميل، وكلمة سر. وبعدها اختار نوع شغلك وخلص. بياخد أقل من دقيقة.", f: ["install", "move", "team"] },
     { id: "login", q: ["كيف ادخل", "تسجيل الدخول", "login", "sign in", "ما بقدر افوت", "مش راضي يفتح حسابي", "وين ادخل"],
-      a: "من [daftarapp.co/app](/app/) بإيميلك وكلمة السر. إذا نسيت كلمة السر اضغط «نسيت كلمة السر؟» وبنبعتلك رابط على الإيميل.", f: ["forgot", "install"] },
+      a: "افتح تطبيق دفتر وادخل بإيميلك وكلمة السر. إذا نسيت كلمة السر اضغط «نسيت كلمة السر؟» وبنبعتلك رابط على الإيميل.", f: ["forgot", "install"] },
     { id: "forgot", q: ["نسيت كلمة السر", "نسيت الباسورد", "forgot password", "reset password", "ما بتذكر كلمة المرور", "بدي اغير كلمة السر", "تغيير الباسورد"],
       a: "بشاشة الدخول اضغط «نسيت كلمة السر؟» واكتب إيميل الشركة، وبيوصلك رابط تحط فيه كلمة سر جديدة. ولتغييرها وإنت داخل: من قائمة الحساب «غيّر كلمة السر».", f: ["login", "support"] },
     { id: "install", q: ["كيف انزل التطبيق على الجوال", "كيف انزله", "وين التطبيق", "بدي انزل البرنامج", "download", "install", "رابط التحميل", "تحميل التطبيق", "كيف احمله", "على جوالي", "موجود على البلاي ستور", "app store", "google play", "متجر"],
-      a: "بتثبّته من الموقع مباشرة وبيصير أيقونة على شاشتك مثل أي تطبيق: [شرح التنزيل](/#install). على Google Play وApp Store قريباً.", f: ["android", "iphone", "pc"] },
+      a: "بتنزّله من [صفحة التنزيل](/#download) وبيصير أيقونة على شاشتك مثل أي تطبيق: على الآيفون من Safari، على أندرويد من Chrome، وعلى الكمبيوتر من Chrome أو Edge.", f: ["android", "iphone", "pc"] },
     { id: "android", q: ["تنزيل على اندرويد", "سامسونج", "شاومي", "هواوي", "android install", "كيف انزله على الاندرويد", "كروم"],
       a: "على أندرويد: افتح daftarapp.co من Chrome، واضغط «ثبّت دفتر» أو من القائمة ⋮ «تثبيت التطبيق». إذا فاتح من إنستغرام أو فيسبوك، افتح الرابط بـ Chrome أول. [فيديو الشرح](/#how-android)", f: ["iphone", "pc"] },
     { id: "iphone", q: ["تنزيل على ايفون", "ايباد", "iphone install", "ios", "سفاري", "كيف انزله على الايفون", "safari"],
@@ -89,9 +91,9 @@
     { id: "projects", q: ["المشاريع", "كلفة المشروع", "ربح المشروع", "فروع", "اكثر من فرع", "project", "branches", "مجلد"],
       a: "بتفتح مجلد لكل مشروع أو فرع: كم كلّف، كم دخل، كم ربّح، والباقي على صاحب المشروع. والتقارير بتجمعهم كلهم.", f: ["contract", "reports"] },
     { id: "contract", q: ["شركة مقاولات", "مقاولات", "مقاول", "contractor", "ورشة بناء", "عمال البناء", "تشطيبات"],
-      a: "دفتر انولد بموقع بناء: مجلد لكل مشروع، دوام العمال بكبسة، اليوميات والسلف، فواتير المواد على المشروع، وكشف للمالك بكم كلّف وكم إله.", f: ["attendance", "projects"] },
+      a: "دفتر انولد بموقع بناء: مجلد لكل مشروع، دوام العمال بكبسة، اليوميات والسلف، فواتير المواد على المشروع، وكشف للمالك بكم كلّف وكم إله. [دفتر للمقاولين](/for/contractors/)", f: ["attendance", "projects"] },
     { id: "shop", q: ["سوبرماركت", "بقالة", "محل تجاري", "دكانة", "ميني ماركت", "shop", "store", "retail"],
-      a: "للمحل: نقطة بيع بالباركود، وصل حراري، ملصقات باركود بالسعر، مخزون بيمشي لحاله، تواريخ انتهاء، وكاشير بصلاحية محدودة.", f: ["pos", "barcode", "stock"] },
+      a: "للمحل: نقطة بيع بالباركود، وصل حراري، ملصقات باركود بالسعر، مخزون بيمشي لحاله، تواريخ انتهاء، وكاشير بصلاحية محدودة. [دفتر للمحلات](/for/shops/)", f: ["pos", "barcode", "stock"] },
     { id: "driver", q: ["سواق", "كريم", "اوبر", "توصيل", "careem", "uber", "driver", "تكسي", "سائق"],
       a: "فيه وضع خاص للسواقين (كريم وأوبر والتوصيل): الدخل والعمولة والبنزين والربح الصافي. وفي [حاسبة ربح السائق](/tools/driver/) مجانية.", f: ["calculators"] },
     { id: "reports", q: ["التقارير", "ميزان مراجعة", "قائمة الدخل", "الميزانية", "الارباح والخسائر", "reports", "trial balance", "balance sheet", "profit and loss", "قيود", "دليل الحسابات"],
@@ -132,10 +134,12 @@
       a: "من قائمة الحساب «الإعدادات» (لصاحب الشركة): الاسم، نوع الشغل، العملة، اللغة، أيام العطلة، ساعات الدوام، الرقم الضريبي والعنوان، نسبة الضريبة، ورق الطباعة، ونسب الضمان.", f: ["receipt", "currency"] },
     { id: "made", q: ["مين عمل البرنامج", "من وين انتم", "اردني", "who made", "شركة مين"],
       a: "دفتر فكرة أردنية وصُنع في الأردن، انولد بموقع بناء من سؤال: كم كلّفنا المشروع؟", f: ["what", "support"] },
+    { id: "demo", q: ["بدي اجرب قبل ما انزل", "في نسخة تجريبية", "بقدر اجربه بدون تسجيل", "demo", "try it", "اشوفه من جوا", "تجربة مجانية"],
+      a: "آه، [جرّب دفتر بدون تسجيل](/demo/): بيفتحلك شركة تجريبية فيها بيانات وهمية، العب فيها براحتك. وإذا عجبك، نزّله ببلاش.", f: ["install", "price", "what"] },
     { id: "hi", q: ["مرحبا", "هلا", "السلام عليكم", "اهلين", "hello", "hi", "مساء الخير", "صباح الخير", "يا هلا", "مرحبتين", "كيفك"],
       a: "أهلاً فيك! اسألني أي اشي عن دفتر: الأسعار، الميزات، التنزيل، أو كيف تنقل بياناتك.", f: ["price", "what", "move"] },
     { id: "thanks", q: ["شكرا", "يسلمو", "thanks", "thank you", "مشكور", "يعطيك العافية", "تسلم", "ممتاز"],
-      a: "العفو! إذا بدك تبلش: [ابدأ مجاناً](/app/).", f: ["start", "install"] },
+      a: "العفو! إذا بدك تبلش: [نزّل دفتر](/#download).", f: ["start", "install"] },
   ];
   // words that point to a topic even when no example phrasing uses them
   const KW = {
@@ -150,15 +154,17 @@
     vat: "ضريبه مبيعات اقرار فتره", accountant: "محاسب سهوله افهم خبره", export: "تصدير نسخه احتياطيه تحميل", team: "فريق صلاحيه مستخدم محاسب كاشير شريك دعوه", security: "امان محمي خصوصيه ضياع تضيع سرقه حمايه",
     offline: "انترنت قطع",
     loyalty: "نقاط نقطه ولاء مكافاه خصم دائم", appointments: "موعد مواعيد حجز احجز حجوزات عياده صالون جدول مريض مرضى", po: "طلب طلبيه امر شراء مورد", currency: "عمله دوله بلد", language: "لغه انجليزي عربي", multico: "شركتين اكثر شركه نفس", calculators: "حاسبه احسب", compare: "فرق افضل احسن مقارنه",
-    support: "تواصل دعم مساعده مشكله رقم ايميل احكي", delete: "حذف الغاء", settings: "اعدادات اسم شعار عنوان", made: "مين صنع اردني", hi: "مرحبا اهلا سلام هلا", thanks: "شكرا يسلمو مشكور",
+    demo: "تجربه تجريبي جرب شوف قبل", support: "تواصل دعم مساعده مشكله رقم ايميل احكي", delete: "حذف الغاء", settings: "اعدادات اسم شعار عنوان", made: "مين صنع اردني", hi: "مرحبا اهلا سلام هلا", thanks: "شكرا يسلمو مشكور",
   };
-  const FALLBACK = "ما فهمت عليك منيح. جرّب تسأل بطريقة ثانية، أو اختار من هدول، أو راسلنا على [hello@daftarapp.co](mailto:hello@daftarapp.co).";
-  const OFFTOPIC = "أنا بجاوب عن دفتر بس. اسألني عن الأسعار، الميزات، التنزيل، أو نقل بياناتك.";
-  const LABEL = { price: "قديش سعره؟", what: "شو بيعمل؟", who: "بيناسب شغلي؟", start: "كيف أسجل؟", install: "كيف أنزّله؟", android: "على أندرويد", iphone: "على آيفون", pc: "على الكمبيوتر", move: "النقل من برنامج ثاني", excel: "من Excel", balances: "الأرصدة القديمة",
+  const FALLBACK = EN ? EN.ui.fallback : "ما فهمت عليك منيح. جرّب تسأل بطريقة ثانية، أو اختار من هدول، أو راسلنا على [hello@daftarapp.co](mailto:hello@daftarapp.co).";
+  const OFFTOPIC = EN ? EN.ui.offtopic : "أنا بجاوب عن دفتر بس. اسألني عن الأسعار، الميزات، التنزيل، أو نقل بياناتك.";
+  let LABEL = { demo: "جرّب بدون تسجيل", price: "قديش سعره؟", what: "شو بيعمل؟", who: "بيناسب شغلي؟", start: "كيف أسجل؟", install: "كيف أنزّله؟", android: "على أندرويد", iphone: "على آيفون", pc: "على الكمبيوتر", move: "النقل من برنامج ثاني", excel: "من Excel", balances: "الأرصدة القديمة",
     barcode: "الباركود", labels: "ملصقات الباركود", receipt: "الطابعة الحرارية", pos: "نقطة البيع", invoices: "الفواتير", quotes: "عروض الأسعار", share: "واتساب وPDF", jofotara: "JoFotara", installments: "الأقساط", cheques: "الشيكات", customers: "الزباين",
     suppliers: "الموردين", stock: "المخزون", expiry: "تواريخ الانتهاء", payroll: "الرواتب", attendance: "الدوام", advances: "السلف", ss: "الضمان", incometax: "ضريبة الدخل", leave: "الإجازات", radar: "رادار السيولة", notify: "الإشعارات", recurring: "المتكرر",
     expenses: "المصاريف", projects: "المشاريع والفروع", contract: "المقاولات", shop: "المحلات", reports: "التقارير", vat: "ضريبة المبيعات", accountant: "لازم أكون محاسب؟", export: "التصدير", team: "الفريق والصلاحيات", security: "الأمان", offline: "بدون نت",
     currency: "العملات", loyalty: "نقاط الولاء", appointments: "المواعيد", po: "طلبات الشراء", language: "اللغة", calculators: "الحاسبات", support: "التواصل", forgot: "نسيت كلمة السر", login: "تسجيل الدخول", driver: "السواقين" };
+
+  if (EN) { if (EN.kw) Object.keys(EN.kw).forEach((k) => (KW[k] = (KW[k] || "") + " " + EN.kw[k])); LABEL = EN.label; KB.forEach((it) => { if (EN.a[it.id]) it.a = EN.a[it.id]; if (EN.q[it.id]) it.q = it.q.concat(EN.q[it.id]); }); }
 
   /* ======================= understanding ======================= */
   const SYN = {
@@ -230,7 +236,8 @@
   };
   const PRE = ["وبال", "فبال", "وال", "بال", "كال", "فال", "عال", "لل", "ال", "و", "ب", "ل", "ف", "ك"];
   const SUF = ["تهم", "اتهم", "كم", "هم", "ها", "نا", "ات", "ين", "ون", "يه", "ته", "ه", "ي", "ك"];
-  const STOP = new Set(["في", "من", "على", "عن", "الى", "الي", "انا", "انت", "هو", "هي", "هل", "اذا", "لو", "يا", "مع", "هاد", "هاذا", "هذا", "هذه", "هاي", "هيك", "عشان", "علشان", "لانه", "او", "ولا", "بس", "كل", "اشي", "شي", "عندي", "عندكم", "عندك", "فيه", "فيها", "الو", "الها", "is", "the", "a", "an", "to", "of", "it", "in", "on", "for", "do", "does", "i", "you", "my", "me", "and", "or", "with", "your", "work", "works", "support", "supports", "use", "using", "have", "has", "there", "is", "are", "can", "will", "be", "بعرف", "اعرف", "بعرفش", "مش", "ما", "لا", "اللي", "يلي", "الي"]);
+  const STOP_EN = ["the", "a", "an", "is", "are", "do", "does", "i", "my", "me", "you", "your", "it", "its", "to", "of", "in", "on", "for", "with", "and", "or", "this", "that", "there", "be", "will", "at", "from", "about", "please", "im", "we", "our"];
+  const STOP = new Set([...STOP_EN, "في", "من", "على", "عن", "الى", "الي", "انا", "انت", "هو", "هي", "هل", "اذا", "لو", "يا", "مع", "هاد", "هاذا", "هذا", "هذه", "هاي", "هيك", "عشان", "علشان", "لانه", "او", "ولا", "بس", "كل", "اشي", "شي", "عندي", "عندكم", "عندك", "فيه", "فيها", "الو", "الها", "is", "the", "a", "an", "to", "of", "it", "in", "on", "for", "do", "does", "i", "you", "my", "me", "and", "or", "with", "your", "work", "works", "support", "supports", "use", "using", "have", "has", "there", "is", "are", "can", "will", "be", "بعرف", "اعرف", "بعرفش", "مش", "ما", "لا", "اللي", "يلي", "الي"]);
   function norm(s) {
     return String(s || "").toLowerCase()
       .replace(/[ً-ٰٟـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/ؤ/g, "و").replace(/ئ/g, "ي")
@@ -305,7 +312,7 @@
     while ((m = re.exec(s))) {
       if (m.index > i) el.appendChild(document.createTextNode(s.slice(i, m.index)));
       const a = document.createElement("a"); a.href = m[2]; a.textContent = m[1]; if (m[2].startsWith("mailto:")) a.className = "ltr";
-      a.addEventListener("click", () => { if (m[2].startsWith("/#") && location.pathname === "/") setTimeout(close, 50); }); el.appendChild(a); i = re.lastIndex;
+      a.addEventListener("click", () => { if (/^\/(en\/)?#/.test(m[2]) && /^\/(en\/)?$/.test(location.pathname)) setTimeout(close, 50); }); el.appendChild(a); i = re.lastIndex;
     }
     if (i < s.length) el.appendChild(document.createTextNode(s.slice(i)));
   }
@@ -343,17 +350,17 @@
 @media (max-width:480px){.chat{inset:0;width:100%;height:100dvh;border-radius:0;border:0}}`;
     document.head.appendChild(css);
     root = document.createElement("section"); root.className = "chat"; root.id = "chat"; root.hidden = true;
-    root.setAttribute("role", "dialog"); root.setAttribute("aria-label", "مساعد دفتر");
-    root.innerHTML = `<div class="chat__h"><div><b>مساعد دفتر</b><small>بيجاوبك عن أي اشي بالبرنامج</small></div><button class="chat__x" type="button" aria-label="سكّر">✕</button></div>
+    root.setAttribute("role", "dialog"); root.setAttribute("aria-label", EN ? EN.ui.title : "مساعد دفتر");
+    root.innerHTML = `<div class="chat__h"><div><b>${EN ? EN.ui.title : "مساعد دفتر"}</b><small>${EN ? EN.ui.sub : "بيجاوبك عن أي اشي بالبرنامج"}</small></div><button class="chat__x" type="button" aria-label="${EN ? EN.ui.close : "سكّر"}">✕</button></div>
       <div class="chat__log" role="log" aria-live="polite"></div>
-      <form class="chat__f" autocomplete="off"><input aria-label="اكتب سؤالك" placeholder="اكتب سؤالك…" maxlength="300"><button type="submit">اسأل</button></form>`;
+      <form class="chat__f" autocomplete="off"><input aria-label="${EN ? EN.ui.placeholder : "اكتب سؤالك"}" placeholder="${EN ? EN.ui.placeholder : "اكتب سؤالك…"}" maxlength="300"><button type="submit">${EN ? EN.ui.send : "اسأل"}</button></form>`;
     document.body.appendChild(root);
     log = root.querySelector(".chat__log"); input = root.querySelector("input");
     root.querySelector(".chat__x").addEventListener("click", close);
     root.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); const v = input.value; input.value = ""; ask(v); });
     root.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-    bubble("bot", "أهلاً! أنا مساعد دفتر. اسألني بأي طريقة بتحكيها: الأسعار، الميزات، التنزيل، أو كيف تنقل بياناتك من برنامج ثاني.");
-    chips(["price", "move", "install", "barcode", "payroll", "what"]);
+    bubble("bot", EN ? EN.ui.hello : "أهلاً! أنا مساعد دفتر. اسألني بأي طريقة بتحكيها: الأسعار، الميزات، التنزيل، أو كيف تنقل بياناتك من برنامج ثاني.");
+    chips(["price", "demo", "move", "install", "barcode", "what"]);
   }
   function open(btn) { if (!root) build(); opener = btn || null; root.hidden = false; if (opener) opener.setAttribute("aria-expanded", "true"); input.focus(); }
   function close() { if (!root) return; root.hidden = true; if (opener) { opener.setAttribute("aria-expanded", "false"); opener.focus(); } }
