@@ -572,8 +572,12 @@ button.ap-card{width:100%;text-align:start;cursor:pointer}
 .pg-card .hint{font-size:.82rem}
 body.pg-open{overflow:hidden}
 /* v16: Google sign-in, first win, busy buttons */
-.g-btn{background:var(--surface);color:var(--ink);border:1px solid var(--line);gap:10px;width:100%}
-.g-btn svg{flex:none}
+.sso{display:flex;flex-direction:column;gap:10px;margin-bottom:4px}
+.sso-btn{width:100%;gap:10px;border-radius:999px;font-weight:700}
+.sso-btn svg{flex:none}
+.g-btn{background:#fff;color:#111;border:1.5px solid #1f1f1f}
+.a-btn{background:#000;color:#fff;border:1.5px solid #000}
+@media (prefers-color-scheme:dark){.a-btn{border-color:#fff}}
 .or-line{display:flex;align-items:center;gap:10px;color:var(--muted,#6b7591);font-size:.85rem;margin:2px 0 6px}
 .or-line::before,.or-line::after{content:"";flex:1;height:1px;background:var(--line)}
 .g-wait{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:10px 0 14px}
