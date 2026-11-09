@@ -364,6 +364,16 @@ function statsView(){
   let h = "";
   const tiles = [["aCompanies",a.companies],["aNew7",a.new_7d],["aNew30",a.new_30d],["aActive7",a.active_7d],["aUnits",a.units],["aStaff",a.staff]];
   h += `<div class="kpis">${tiles.map(([l,v],i)=>`<div class="kpi ${i===0?"hero":""}"><span class="label">${t(l)}</span><b class="num">${fmt(v||0)}</b></div>`).join("")}</div>`;
+  { // do people come back? (counts only, from sign-in and last-change dates)
+    const L0 = a.list||[], en = LANG==="en", D = 864e5, now = Date.now(), ts = x => x ? new Date(x).getTime() : 0;
+    const back = L0.filter(c => ts(c.last_sign_in_at) - ts(c.created_at) > D).length;
+    const act7 = L0.filter(c => now - ts(c.last_activity) < 7*D).length;
+    const fresh = L0.filter(c => now - ts(c.created_at) < D).length;
+    const rows = [[en?"Signed up":"سجّلوا", L0.length], [en?"Came back another day":"رجعوا بيوم ثاني", back], [en?"Used it in the last 7 days":"استعملوه آخر 7 أيام", act7]];
+    const mx = Math.max(1, L0.length);
+    if(L0.length) h += `<div class="panel"><span class="label">${en?"Do they come back?":"هل الناس بترجع؟"}</span>${rows.map(([l,v])=>`<div class="cat"><span>${esc(l)}</span><b class="num">${fmt(v)} <span class="sub">· ${Math.round(v/mx*100)}%</span></b><div class="bar"><span style="width:${v/mx*100}%"></span></div></div>`).join("")}
+      ${fresh?`<span class="sub">${en?`${fresh} signed up in the last 24h (too early to tell).`:`${fresh} سجّلوا آخر 24 ساعة (بكير نحكم عليهم).`}</span>`:""}</div>`;
+  }
   const bt = a.by_type||[], bmx = Math.max(1,...bt.map(x=>x.count));
   if(bt.length) h += `<div class="panel"><span class="label">${t("aByType")}</span>${bt.map(x=>`<div class="cat"><span>${icon((P[x.type]||P.other).icon)} ${esc((P[x.type]||P.other).name[LANG==="en"?1:0])}</span><b class="num">${x.count}</b><div class="bar"><span style="width:${x.count/bmx*100}%"></span></div></div>`).join("")}</div>`;
   const bm = (a.by_month||[]).slice(-12), mx = Math.max(1,...bm.map(x=>x.count));
@@ -440,6 +450,7 @@ function pushView(){
         <div class="two">${me ? `<button class="btn" data-act="admPushTest">${icon("send")}${tx("جرّب","Test")}</button><button class="btn ghost" data-act="admPushOff">${tx("وقّفها","Turn off")}</button>` : `<button class="btn primary" data-act="admPushOn">${icon("bell")}${tx("شغّل التنبيهات على هالجهاز","Turn on for this device")}</button>`}</div>`}
     ${P ? `<span class="sub">${tx("أجهزة الإدارة المشتركة:","Admin devices:")} <b class="num">${fmt(P.admin_devices||0)}</b></span>` : ""}</div>`;
   // 2) is sending set up?
+  if(CS.pushErr) h += `<div class="alert bad">${icon("alert")}<span>${tx("سبب آخر فشل:","Last failure:")} <span class="ltr sel">${esc(CS.pushErr)}</span></span></div>`;
   h += `<div class="panel"><span class="label">${tx("حالة الإشعارات","Notification status")}</span>
     ${H ? (H.vapid ? `<div class="alert good">${icon("check")}<span>${tx("السيرفر جاهز ويبعت إشعارات ✓","Server is set up and sending ✓")}</span></div>`
                    : `<div class="alert bad">${icon("alert")}<span>${tx("مفاتيح الإشعارات (VAPID) ناقصة بإعدادات الـ Edge Function. بدون هيك ما في إشي بينبعت.","The VAPID keys are missing in the Edge Function settings. Nothing can be sent until they're added.")}</span></div>`)
@@ -569,7 +580,8 @@ document.addEventListener("submit", async e=>{
       if(!confirm(LANG==="en" ? `Send "${title}" to ${target==="owners"?"business owners":"everyone"}?` : `أكيد بدك تبعت «${title}» لـ${target==="owners"?"أصحاب الشركات":"الكل"}؟`)) return;
       const { data, error } = await sb.functions.invoke("push", {body:{mode:"broadcast", title, body, url, target}});
       if(error){ let m = ""; try{ m = (await error.context.json()).error; }catch(_){} toast(m==="limit" ? (LANG==="en"?"Daily limit reached (5)":"وصلت الحد اليومي (5)") : t("aFail")); return; }
-      toast(LANG==="en" ? `Sent to ${data.sent} devices` : `انبعت لـ ${data.sent} جهاز`); f.reset(); await loadPush();
+      CS.pushErr = data && data.failed && data.errors && data.errors.length ? data.errors.join(" · ") : null;
+      toast(LANG==="en" ? `Sent to ${data.sent} devices${data.failed?` · ${data.failed} failed`:""}` : `انبعت لـ ${data.sent} جهاز${data.failed?` · فشل ${data.failed}`:""}`); if(data.sent) f.reset(); await loadPush();
     }
     if(f.id==="schedForm"){
       const E = f.elements, title = E.title.value.trim(), body = E.body.value.trim(), url = E.url.value.trim() || "/app/", target = (f.querySelector('[name="target"]:checked')||{}).value || "all";
@@ -609,7 +621,18 @@ const ACT = {
     await loadPush();
   },
   admPushOff: async () => { const sub = await admSub(); if(sub){ try{ await sb.rpc("admin_push_unsubscribe", {p_endpoint:sub.endpoint}); }catch(e){} try{ await sub.unsubscribe(); }catch(e){} } await loadPush(); },
-  admPushTest: async (_, el) => { el.disabled = true; const r = await admReg(); if(r) await r.showNotification(LANG==="en"?"Daftar · test":"دفتر · تجربة", {body:LANG==="en"?"Support alerts will look like this.":"هيك رح توصلك تنبيهات الدعم.", icon:"/app/icons/icon-192.png", dir:LANG==="en"?"ltr":"rtl"}); el.disabled = false; },
+  admPushTest: async (_, el) => {   // a real push through Apple/Google, the same way a support alert travels
+    el.disabled = true; const en = LANG==="en";
+    try{
+      const { data, error } = await sb.functions.invoke("push", {body:{mode:"admin_test"}});
+      let d = data; if(error){ try{ d = await error.context.json(); }catch(_){ d = null; } }
+      if(d && d.sent > 0) toast(en ? `Sent to ${d.sent} device(s). It should arrive within seconds.` : `انبعت لـ ${d.sent} جهاز. لازم يوصلك خلال ثواني.`);
+      else if(d && d.error==="no device") toast(en ? "No admin device registered yet." : "ما في جهاز إدارة مسجّل لسا.");
+      else CS.pushErr = (d && d.errors && d.errors.length) ? d.errors.join(" · ") : (d && d.error) || (error && error.message) || "?";
+      if(d && d.failed && d.errors && d.errors.length) CS.pushErr = d.errors.join(" · ");
+    }catch(e){ CS.pushErr = String(e && e.message || e); }
+    el.disabled = false; render();
+  },
   schedToggle: async id => { const x = (CS.sched||[]).find(s=>String(s.id)===String(id)); if(!x) return;
     let at = x.send_at; if(!x.active && new Date(at) < new Date()){ const d = new Date(at), step = x.repeat==="weekly" ? 7*864e5 : 864e5; while(d < new Date()) d.setTime(d.getTime()+step); at = d.toISOString(); }
     const { error } = await sb.rpc("admin_push_schedule_save", {p_id:x.id, p_title:x.title, p_body:x.body, p_url:x.url, p_target:x.target, p_send_at:at, p_repeat:x.repeat, p_active:!x.active});

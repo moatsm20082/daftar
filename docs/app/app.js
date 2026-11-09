@@ -4819,3 +4819,144 @@ document.addEventListener("keydown", e=>{ if(e.target.id==="botInput" && e.key==
 (function(){ if(!/[?&]support=1/.test(location.search)) return; let n = 0;
   const tick = setInterval(()=>{ if(++n>120) return clearInterval(tick);
     if(typeof S!=="undefined" && S.screen==="app" && S.ready){ clearInterval(tick); try{ history.replaceState(null,"",location.pathname); }catch(e){} openChat("tickets"); markTicketsSeen(); } }, 250); })();
+/* =====================================================================
+   v16 growth: sign in with Google in one tap, and a first win in the first minute.
+   - Google: works in the installed app too. On iPhone the Google page opens in its
+     own window, so it hands the sign-in back through a one-time code (oauth_handoff)
+     while the app waits; in a normal browser it simply comes back to the app.
+   - First win: right after setup (and for any business that has nothing yet), one
+     screen with the 3 things that make Daftar useful on day one.
+   ===================================================================== */
+Object.assign(L, {
+  gGoogle:["المتابعة مع Google","Continue with Google"], gOr:["أو بالإيميل","or with email"],
+  gWait:["كمّل الدخول بنافذة Google، وبعدها ارجع لهون. رح ندخلك لحالنا.","Finish signing in on the Google page, then come back here. We'll sign you in."],
+  gCancel:["إلغاء","Cancel"], gFail:["ما زبط الدخول بـ Google. جرّب مرة ثانية أو ادخل بالإيميل.","Google sign-in didn't work. Try again or use email."],
+  fwTitle:["خلّينا نسجّل أول إشي سوا","Let's record your first thing"],
+  fwSub:["دقيقة وحدة، وبتشوف دفتر كيف بيحسبلك كل إشي لحاله.","One minute, and you'll see Daftar do the math for you."],
+  fwExp:["سجّل مصروف","Record an expense"], fwExpS:["بنزين، مواد، أجار… أي إشي دفعته اليوم","Fuel, materials, rent… anything you paid today"],
+  fwInv:["اعمل فاتورة بيع","Make a sales invoice"], fwInvS:["وابعتها للزبون واتساب","and send it on WhatsApp"],
+  fwPos:["بيع من نقطة البيع","Sell from the point of sale"], fwPosS:["أسرع طريقة للمحل والمطعم","The fastest way for shops and restaurants"],
+  fwUnit:["ضيف أول مشروع","Add your first project"], fwUnitS:["وكل مصاريفه ودخله وعماله بمكان واحد","with its costs, income and workers in one place"],
+  fwStaff:["ضيف موظف","Add an employee"], fwStaffS:["وسجّل دوامه وراتبه","and track attendance and pay"],
+  fwLater:["بعدين","Later"], defUnitProj:["عام","General"], defUnitBranch:["الفرع الرئيسي","Main branch"], fwHelp:["عندك سؤال؟ اسأل المساعد","Got a question? Ask the assistant"],
+});
+
+if(!ICON.check) ICON.check = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
+
+/* ---------- Google ---------- */
+let GOOGLE_ON = false, gPoll = null;
+const gNonce = () => { const a = new Uint8Array(36); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); };
+(async function googleCheck(){   // show the button only once Google is switched on in Supabase
+  try{
+    if(window.DEMO_MODE || !C.SUPABASE_URL || !C.SUPABASE_ANON_KEY) return;
+    const r = await fetch(C.SUPABASE_URL + "/auth/v1/settings", {headers:{apikey:C.SUPABASE_ANON_KEY}});
+    const j = await r.json(); GOOGLE_ON = !!(j && j.external && j.external.google);
+    if(GOOGLE_ON && typeof S!=="undefined" && ["login","signup"].includes(S.screen)) render();
+  }catch(e){}
+})();
+function googleBlock(){
+  if(!GOOGLE_ON || S.invite) return "";
+  if(S.gWaiting) return `<div class="g-wait"><span class="spin" aria-hidden="true"></span><p>${t("gWait")}</p><button type="button" class="linkbtn" data-act="googleCancel">${t("gCancel")}</button></div>`;
+  return `<button type="button" class="btn big g-btn" data-act="google"><svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>${t("gGoogle")}</button>
+    <div class="or-line"><span>${t("gOr")}</span></div>`;
+}
+const _authView = authView;
+authView = function(){   // add the Google button on top of the sign-in and sign-up cards
+  let h = _authView();
+  if(S.screen==="login" || S.screen==="signup"){
+    const g = googleBlock();
+    if(g) h = h.replace(/<form data-form="(login|signup)" class="aform" novalidate>/, m => g + m);
+  }
+  return h;
+};
+async function googleTake(){
+  const n = lsGet("oauthNonce",""), at = Number(lsGet("oauthAt",0)) || 0;
+  if(!n || Date.now()-at > 5*60e3){ googleStop(); return; }
+  try{
+    const { data } = await sb.rpc("oauth_handoff_take", {p_nonce:n});
+    if(data){
+      googleStop(true);
+      const { error } = await sb.auth.refreshSession({refresh_token:data});
+      if(error){ S.authMsg = t("gFail"); S.authMsgType = "err"; render(); }
+      // signed in: onAuthStateChange → afterLogin
+    }
+  }catch(e){}
+}
+function googleStop(){ if(gPoll){ clearInterval(gPoll); gPoll = null; } S.gWaiting = false; lsSet("oauthNonce",""); if(["login","signup"].includes(S.screen)) render(); }
+function googleWatch(){ if(gPoll) return; S.gWaiting = true; gPoll = setInterval(googleTake, 1500); googleTake(); }
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible" && lsGet("oauthNonce","")) googleTake(); });
+// back from Google in the same window (normal browser, Android): pick the sign-in up right away
+(function resume(n){ if(!lsGet("oauthNonce","") || Date.now()-(Number(lsGet("oauthAt",0))||0) > 5*60e3) return;
+  if(typeof sb!=="undefined" && sb) googleWatch(); else if(n < 40) setTimeout(()=>resume(n+1), 250); })(0);
+Object.assign(A, {
+  google: async (_, el) => {
+    if(el) el.disabled = true;
+    const n = gNonce(); lsSet("oauthNonce", n); lsSet("oauthAt", Date.now());
+    try{
+      const { data, error } = await sb.auth.signInWithOAuth({provider:"google", options:{
+        redirectTo: location.origin + "/app/auth.html?n=" + n, skipBrowserRedirect:true, queryParams:{prompt:"select_account"}}});
+      if(error || !data || !data.url) throw error || new Error("no url");
+      try{ (window.dtrack||function(){})("google_start"); }catch(e){}
+      if(isStandalone()){ googleWatch(); render(); const w = window.open(data.url, "_blank"); if(!w) location.href = data.url; }
+      else location.href = data.url;
+    }catch(e){ googleStop(); S.authMsg = t("gFail"); S.authMsgType = "err"; render(); }
+  },
+  googleCancel: () => googleStop(),
+});
+
+/* ---------- first win ---------- */
+function fwHasData(){ return ["expenses","income","invoices","staff","items","vouchers"].some(c => (S[c]||[]).length) || (S.units||[]).some(u => !u.auto && !u.demo); }
+function fwOptions(){
+  const ty = (COMPANY && COMPANY.settings && COMPANY.settings.type) || "other";
+  const shopLike = /shop|retail|restaurant|cafe|market|pharm|bakery|salon/.test(ty), projLike = /contract|real|agency|tech|gamedev|marketing|events|consulting/.test(ty);
+  const o = [["exp","q","exp","fwExp","fwExpS","wallet"], ["inv","newInv","sale","fwInv","fwInvS","file"]];
+  if(shopLike) o.unshift(["pos","pos","","fwPos","fwPosS","pos"]);
+  else if(projLike) o.push(["unit","newUnit","","fwUnit","fwUnitS","folder"]);
+  else o.push(["staff","addStaff","","fwStaff","fwStaffS","users"]);
+  return o.filter(x => typeof A[x[1]]==="function").slice(0,3);
+}
+function firstWinOpen(){
+  const opts = fwOptions(); if(!opts.length) return;
+  openSheet({title:t("fwTitle"), noSave:true, html:`<p class="sub">${t("fwSub")}</p><div class="fw-list">${opts.map(([k,act,id,l,s,ic])=>
+    `<button type="button" class="fw-opt" data-act="fwGo" data-id="${esc(act+":"+id)}">${icon(ic)}<span><b>${t(l)}</b><small>${t(s)}</small></span></button>`).join("")}</div>
+    <div class="fw-foot"><button type="button" class="linkbtn" data-act="fwHelp">${t("fwHelp")}</button><button type="button" class="linkbtn" data-act="fwLater">${t("fwLater")}</button></div>`});
+  try{ (window.dtrack||function(){})("firstwin_open"); }catch(e){}
+}
+/* a business with no project/branch can't record an expense ("add a branch first") — a wall on day one.
+   Give every new business one ready to use; they can rename it or add more later. */
+let unitEnsured = false;
+async function ensureFirstUnit(){
+  if(unitEnsured || ROLE!=="owner" || window.DEMO_MODE) return; unitEnsured = true;
+  if((S.units||[]).length) return;
+  const ty = ST().type || "other", proj = /contract|real|agency|tech|gamedev|marketing|events|consulting/.test(ty);
+  await createDoc("units", {name:t(proj ? "defUnitProj" : "defUnitBranch"), kind:ty, client:"", budget:0, location:"", status:"active", createdAt:Date.now(), startDate:today(), auto:true});
+  render();
+}
+// once they make their own first project/branch, the ready-made one goes away if it was never used
+let autoTidy = 0;
+setInterval(async ()=>{
+  if(typeof S==="undefined" || S.screen!=="app" || !S.ready || ROLE!=="owner" || Date.now()-autoTidy < 4000) return;
+  const auto = (S.units||[]).find(u=>u.auto), mine = (S.units||[]).some(u=>!u.auto && !u.demo);
+  if(!auto || !mine) return;
+  const used = ["expenses","income","staff","attendance","payments","invoices","vouchers","trips"].some(c => (S[c]||[]).some(x => x.unitId===auto.id));
+  autoTidy = Date.now();
+  if(used){ await save("units", auto.id, {...strip(auto), auto:false}, true); return; }   // they use it: keep it for good
+  await remove("units", auto.id); if(S.uid===auto.id) S.uid = null; render();
+}, 2000);
+let fwChecked = false;
+setInterval(()=>{   // once per day, for a business that has nothing yet (new or came back empty)
+  if(fwChecked || typeof S==="undefined" || S.screen!=="app" || !S.ready || !CID || window.DEMO_MODE) return;
+  if(!["owner","member","manager","accountant"].includes(String(ROLE))) { fwChecked = true; return; }
+  if(!unitEnsured && ROLE==="owner"){ ensureFirstUnit(); return; }
+  if(document.getElementById("pushGate") && !document.getElementById("pushGate").hidden) return;   // after the notifications screen
+  if(!document.getElementById("sheet").hidden || (S.chat && S.chat.open)) return;
+  fwChecked = true;
+  if(fwHasData()) return;
+  const k = "fwShown_" + CID, d = today(); if(lsGet(k,"")===d) return; lsSet(k, d);
+  firstWinOpen();
+}, 1200);
+Object.assign(A, {
+  fwGo: id => { const [act, x] = String(id).split(":"); closeSheet(); try{ (window.dtrack||function(){})("firstwin_"+act); }catch(e){} setTimeout(()=>{ if(typeof A[act]==="function") A[act](x||undefined); }, 60); },
+  fwLater: () => closeSheet(),
+  fwHelp: () => { closeSheet(); openChat("ask"); },
+});

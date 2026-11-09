@@ -571,3 +571,21 @@ button.ap-card{width:100%;text-align:start;cursor:pointer}
 .pg-list li svg{flex:none;color:var(--good,#1a9e5f);margin-top:3px}
 .pg-card .hint{font-size:.82rem}
 body.pg-open{overflow:hidden}
+/* v16: Google sign-in, first win, busy buttons */
+.g-btn{background:var(--surface);color:var(--ink);border:1px solid var(--line);gap:10px;width:100%}
+.g-btn svg{flex:none}
+.or-line{display:flex;align-items:center;gap:10px;color:var(--muted,#6b7591);font-size:.85rem;margin:2px 0 6px}
+.or-line::before,.or-line::after{content:"";flex:1;height:1px;background:var(--line)}
+.g-wait{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:10px 0 14px}
+.g-wait p{margin:0}
+.spin{width:28px;height:28px;border-radius:50%;border:3px solid color-mix(in srgb,var(--brand,#2D5BFF) 25%,transparent);border-top-color:var(--brand,#2D5BFF);animation:dspin 1s linear infinite;display:inline-block}
+@keyframes dspin{to{transform:rotate(360deg)}}
+.aform button[type="submit"]:disabled{opacity:.75;cursor:progress}
+.aform button[type="submit"]:disabled::after{content:"";width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;animation:dspin .8s linear infinite;margin-inline-start:10px}
+.fw-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.fw-opt{display:flex;align-items:center;gap:14px;text-align:start;width:100%;padding:14px;border-radius:16px;border:1px solid var(--line);background:var(--surface);color:inherit;font:inherit;cursor:pointer}
+.fw-opt:hover{border-color:var(--brand,#2D5BFF)}
+.fw-opt .ic{width:26px;height:26px;flex:none;color:var(--brand-text,#2D5BFF)}
+.fw-opt span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fw-opt small{color:var(--muted,#6b7591);font-size:.85rem}
+.fw-foot{display:flex;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap}
