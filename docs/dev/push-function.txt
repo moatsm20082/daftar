@@ -7,7 +7,7 @@
 //  - mode "test"      : called by a signed-in user → one test notification to their own devices
 // Secrets (Edge Function env): VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT, CRON_SECRET.
 // SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -274,9 +274,13 @@ Deno.serve(async (req) => {
   const mode = String(b.mode || "");
   // health: is everything set up? (no secrets in the answer)
   if (mode === "health") {
-    const { count } = await db.from("push_subs").select("id", { count: "exact", head: true }).eq("admin", false);
-    const { count: adm } = await db.from("push_subs").select("id", { count: "exact", head: true }).eq("admin", true);
-    return json(req, { ok: true, vapid: await vapid(), devices: count || 0, admin_devices: adm || 0, version: 16 });
+    const { count, error: e1 } = await db.from("push_subs").select("id", { count: "exact", head: true }).eq("admin", false);
+    const { count: adm, error: e2 } = await db.from("push_subs").select("id", { count: "exact", head: true }).eq("admin", true);
+    const { error: e3 } = await db.from("app_secrets").select("name").limit(1);
+    // which key the server runs with (its role only, never the key itself)
+    let keyRole = "?"; try { keyRole = SERVICE.startsWith("eyJ") ? JSON.parse(atob(SERVICE.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).role : SERVICE.split("_").slice(0, 2).join("_"); } catch { keyRole = "unreadable"; }
+    const errs = [e1, e2, e3].filter(Boolean).map((e) => String((e as { message?: string }).message || e).slice(0, 120));
+    return json(req, { ok: true, vapid: await vapid(), devices: count || 0, admin_devices: adm || 0, key: keyRole, db_errors: errs, version: 17 });
   }
   if (!(await vapid())) return json(req, { error: "not configured" }, 503);
 
