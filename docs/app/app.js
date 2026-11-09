@@ -3380,6 +3380,8 @@ function pushGateShow(denied){
 }
 function pushGateHide(){ pushGateEl.hidden = true; document.body.classList.remove("pg-open"); pushGateDone = true; }
 async function pushGateCheck(){
+  // signed out (or switched company): never leave the gate covering the sign-in screen
+  if(typeof S!=="undefined" && S.screen!=="app" && document.getElementById("pushGate") && !document.getElementById("pushGate").hidden){ pushGateHide(); pushGateDone = false; }
   if(pushGateDone || pushGateBusy || window.DEMO_MODE || !pushOk() || typeof S==="undefined" || S.screen!=="app" || !S.ready || !CID) return;
   pushGateBusy = true;
   try{
@@ -3395,6 +3397,16 @@ async function pushGateCheck(){
   } finally { pushGateBusy = false; }
 }
 setInterval(pushGateCheck, 1500);
+// leaving the app (sign out, switching company): nothing from inside the app may stay on top of the sign-in screen
+{ let wasApp = false; const _render = render; render = function(){
+    const r = _render.apply(this, arguments);
+    const inApp = typeof S!=="undefined" && S.screen==="app";
+    if(!inApp){
+      if(pushGateEl && !pushGateEl.hidden){ pushGateHide(); pushGateDone = false; }
+      if(wasApp){ const sh = document.getElementById("sheet"); if(sh && !sh.hidden && typeof closeSheet==="function") closeSheet();
+        if(S.chat && S.chat.open && typeof closeChat==="function") closeChat(); }
+    }
+    wasApp = inApp; return r; }; }
 Object.assign(A, {
   pushGateGo: async () => {
     const b = document.getElementById("pgGo"); if(b) b.disabled = true;
