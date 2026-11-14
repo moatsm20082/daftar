@@ -374,6 +374,15 @@ function statsView(){
     if(L0.length) h += `<div class="panel"><span class="label">${en?"Do they come back?":"هل الناس بترجع؟"}</span>${rows.map(([l,v])=>`<div class="cat"><span>${esc(l)}</span><b class="num">${fmt(v)} <span class="sub">· ${Math.round(v/mx*100)}%</span></b><div class="bar"><span style="width:${v/mx*100}%"></span></div></div>`).join("")}
       ${fresh?`<span class="sub">${en?`${fresh} signed up in the last 24h (too early to tell).`:`${fresh} سجّلوا آخر 24 ساعة (بكير نحكم عليهم).`}</span>`:""}</div>`;
   }
+  { // invite contest leaderboard
+    const iv = CS.inv, en = LANG==="en";
+    if(iv){ const B = iv.board||[], d = x => { try{ return new Date(x).toLocaleDateString(en?"en-GB":"ar-JO-u-nu-latn",{day:"numeric",month:"short"}); }catch(e){ return ""; } };
+      h += `<div class="panel"><span class="label">${en?"Invite challenge":"تحدّي الدعوات"} · ${d(iv.starts)} → ${d(iv.ends)}</span>
+        ${B.length ? B.slice(0,15).map((x,i)=>`<details class="cat"><summary><span>${i+1}. ${esc(x.name)} <span class="sub">${esc(x.email||"")} · ${esc(x.ref_code||"")}</span></span><b class="num">${fmt(x.valid)} <span class="sub">/ ${fmt(x.invited)}</span></b></summary>
+          <div class="sub">${(x.invitees||[]).map(y=>`${y.valid?"✓":"…"} ${esc(y.name)} · ${d(y.at)}`).join("<br>")}</div></details>`).join("")
+          : `<span class="sub">${en?"No invites yet.":"لسا ما في دعوات."}</span>`}
+        <span class="sub">${en?"Counted / signed up. Counted = confirmed email + 3 records.":"محسوبة / سجّلوا. المحسوبة = إيميل مأكّد + 3 حركات."}</span></div>`; }
+  }
   const bt = a.by_type||[], bmx = Math.max(1,...bt.map(x=>x.count));
   if(bt.length) h += `<div class="panel"><span class="label">${t("aByType")}</span>${bt.map(x=>`<div class="cat"><span>${icon((P[x.type]||P.other).icon)} ${esc((P[x.type]||P.other).name[LANG==="en"?1:0])}</span><b class="num">${x.count}</b><div class="bar"><span style="width:${x.count/bmx*100}%"></span></div></div>`).join("")}</div>`;
   const bm = (a.by_month||[]).slice(-12), mx = Math.max(1,...bm.map(x=>x.count));
@@ -495,7 +504,8 @@ function auditView(){
 }
 
 /* ---------- data ---------- */
-async function loadStats(){ const { data, error } = await sb.rpc("admin_stats"); if(error) return guardFail(); CS.stats = data; render(); }
+async function loadStats(){ const { data, error } = await sb.rpc("admin_stats"); if(error) return guardFail(); CS.stats = data; render();
+  try{ const iv = await sb.rpc("admin_invite_board"); CS.inv = iv.error ? null : iv.data; render(); }catch(e){} }
 async function loadSite(){ const { data, error } = await sb.rpc("admin_site_stats", {p_days: CS.siteDays || 30}); if(error) return guardFail(); CS.site = data;
   const f = await sb.rpc("admin_feature_stats"); CS.features = f.error ? null : f.data; render(); }
 async function loadTickets(){ const { data, error } = await sb.rpc("admin_tickets", {p_status: CS.ticketFilter==="all" ? null : CS.ticketFilter}); if(error) return guardFail(); CS.tickets = data || []; render(); }
