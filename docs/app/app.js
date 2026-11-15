@@ -5462,7 +5462,7 @@ document.addEventListener("click", e => { const b = e.target.closest(".btn.prima
    ===================================================================== */
 Object.assign(L, {
   vxNotHeard:["ما سمعتك منيح، احكيها كمان مرة.","I didn't catch that, say it again."],
-  vxSpeakNow:["عم بسمعك…","Listening…"], vxAuto:["لما تسكت بفهم لحالي","I'll take it when you pause"], vxTapSpeak:["اكبس عشان تقاطعه","Tap to interrupt"], vxSpeaking:["دفتر بيحكي…","Daftar is talking…"],
+  vxHear:["اسمع الرد","Play the reply"], vxReplay:["عيدها","Say it again"], vxSpeakNow:["عم بسمعك…","Listening…"], vxAuto:["لما تسكت بفهم لحالي","I'll take it when you pause"], vxTapSpeak:["اكبس عشان تقاطعه","Tap to interrupt"], vxSpeaking:["دفتر بيحكي…","Daftar is talking…"],
 });
 
 const vxListenSR = vxListen;            // the phone's own recognition, kept as the fallback
@@ -5493,7 +5493,7 @@ function vxStopAll(){
 vxListen = async function(){
   if(VX.noRec || !vrCan() || window.DEMO_MODE) return vxListenSR();
   if(VX.state==="thinking") return;
-  vxStopListening(false); vxStopAll();
+  vxStopListening(false); vxStopAll(); VX.needTap = false; VX.tapUrl = "";
   const back = VX.state==="review" ? "review" : VX.state==="listening" ? (VX.prev||"idle") : "idle";
   VX.prev = back; VX.state = "listening"; VX.heard = ""; vxRender();
   let stream;
@@ -5521,16 +5521,21 @@ vxListen = async function(){
 
   /* stop by itself: after you talk and then go quiet for a moment */
   try{
+    /* listen to the voice band only (≈ 250–3800 Hz), so a fan, a generator or traffic doesn't count as talking */
     const ctx = vrCtx(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
-    an.fftSize = 1024; src.connect(an); const buf = new Float32Array(an.fftSize);
+    const hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter();
+    hp.type = "highpass"; hp.frequency.value = 250; lp.type = "lowpass"; lp.frequency.value = 3800;
+    src.connect(hp); hp.connect(lp); lp.connect(an);
+    an.fftSize = 1024; const buf = new Float32Array(an.fftSize);
     let floor = 0, n = 0, loud = 0, lastLoud = 0;
     VR.iv = setInterval(() => {
       if(!VR.mr){ vrStopLoop(); return; }
       an.getFloatTimeDomainData(buf); let s = 0; for(let i=0;i<buf.length;i++) s += buf[i]*buf[i];
       const rms = Math.sqrt(s/buf.length), now = Date.now(), el = now - VR.t0;
       if(el < 300){ floor = (floor*n + rms)/(++n); return; }
-      const thr = Math.max(0.012, floor*3.2);
-      if(rms > thr){ if(++loud >= 3){ VR.spoke = true; lastLoud = now; } } else loud = 0;
+      const thr = Math.max(0.01, floor*3);
+      if(rms > thr){ if(++loud >= 4){ VR.spoke = true; lastLoud = now; } }
+      else { loud = 0; if(!VR.spoke) floor = floor*0.96 + rms*0.04; }   // the room's own noise, kept up to date until you talk
       const o = document.querySelector(".vx-orb"); if(o) o.style.setProperty("--lv", Math.min(1, rms/(thr*4)).toFixed(2));
       if(VR.spoke && now - lastLoud > 1150) return vxStopListening(true);   // done talking
       if(!VR.spoke && el > 8000) return vxStopListening(false);            // nobody spoke
@@ -5548,7 +5553,7 @@ async function vxSendAudio(blob){
     (window.dtrack||function(){})("voice_talk");
     const audio = await vxB64(blob);
     const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), 30000);
-    const r = await vxCall({ mode:"talk", audio, mime:blob.type, ctx:vxContext(), history:VX.hist.slice(-6), speak:!vxMuted(), pending }, ctl.signal);
+    const r = await vxCall({ mode:"talk", audio, mime:blob.type, ctx:vxContext(), history:VX.hist.slice(-6), speak:!vxMuted(), pending, last:vxLastSaid() }, ctl.signal);
     clearTimeout(to);
     const j = await r.json().catch(()=>({}));
     if(!r.ok){
@@ -5578,7 +5583,7 @@ function vxApply(j){
   if(!VX.rows.length && !j.reply){ VX.reply = t("vxNothing"); audio = ""; }
   vxTurn(false, VX.reply);
   VX.lastRows = VX.rows;
-  VX.state = saves.length ? "review" : "done"; VX.busy = false; vxRender(); vxSay(VX.reply, audio ? `data:${j.audio_type||"audio/wav"};base64,${audio}` : "");
+  VX.state = saves.length ? "review" : "done"; VX.busy = false; vxRender(); vxSay(VX.reply, audio ? { b64:audio, type:j.audio_type||"audio/wav" } : "");
 }
 
 /* typed messages take the same road back */
@@ -5613,6 +5618,7 @@ vxCall = async function(body, signal){
 /* speaking, then listening again by itself (like a call) */
 vxSay = async function(text, audio){
   const id = VX.sayN = (VX.sayN||0) + 1;
+  VX.needTap = false; VX.tapUrl = "";
   if(VX.audioDone) VX.audioDone();
   VX.speaking = true; vxRender();
   await vxSpeak(text, audio, id);
@@ -5620,16 +5626,24 @@ vxSay = async function(text, audio){
   VX.speaking = false;
   if(!VX.open) return;
   vxRender();
+  if(VX.needTap) return;            // waiting for «اسمع الرد»
   if(VX.hands && !VX.busy && VX.misses < 2 && (VX.state==="review" || VX.state==="done") && !window.DEMO_MODE && (vrCan() || vxSR())) vxListen();
 };
+function vxLastSaid(){ for(let i=VX.hist.length-1;i>=0;i--) if(VX.hist[i].role==="assistant") return String(VX.hist[i].text||"").slice(0,200); return ""; }
+/* the voice comes back as text (base64); a blob URL plays everywhere, a long data: URL doesn't */
+function vxAudioUrl(b64, type){
+  try{ const bin = atob(b64), u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([u], { type:type||"audio/wav" })); }catch(e){ return ""; }
+}
+/* resolves "ok", "fail" (can't play this) or "blocked" (the phone wants a tap first) */
 function vxPlay(src){
   return new Promise(res => {
     const au = VX.audio || (VX.audio = new Audio());
-    let fin = false; const done = ok => { if(fin) return; fin = true; au.onended = au.onerror = null; VX.audioDone = null; res(ok!==false); };
-    VX.audioDone = () => done(true);
-    au.onended = () => done(true); au.onerror = () => done(false); au.src = src;
-    const p = au.play(); if(p && p.catch) p.catch(() => done(false));
-    setTimeout(() => done(true), 25000);
+    let fin = false; const done = r => { if(fin) return; fin = true; au.onended = au.onerror = null; VX.audioDone = null; res(r); };
+    VX.audioDone = () => done("ok");
+    au.onended = () => done("ok"); au.onerror = () => done("fail"); au.src = src; au.volume = 1;
+    const p = au.play(); if(p && p.catch) p.catch(e => done(e && e.name==="NotAllowedError" ? "blocked" : "fail"));
+    setTimeout(() => done("ok"), 25000);
   });
 }
 vxSpeak = async function(text, audio, id){
@@ -5637,7 +5651,8 @@ vxSpeak = async function(text, audio, id){
   try{
     if(window.DEMO_MODE) throw 0;
     let url = "";
-    if(audio){ url = audio; }
+    if(audio && typeof audio==="object"){ url = vxAudioUrl(audio.b64, audio.type); }
+    else if(audio){ url = audio; }
     else if(VR.cache.has(text)){ url = VR.cache.get(text); }
     else if(!VX.noTts){
       const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), 12000);
@@ -5649,7 +5664,11 @@ vxSpeak = async function(text, audio, id){
       if(text.length < 80 && VR.cache.size < 20) VR.cache.set(text, url);
     } else throw 0;
     if(!VX.open || vxMuted() || (id && id!==VX.sayN)) return;
-    if(!(await vxPlay(url)) && VX.open && !vxMuted() && !(id && id!==VX.sayN)) await vxSpeakLocal(text);   // the phone couldn't play it: use its own voice
+    if(!url) throw 0;
+    VX.lastUrl = url;
+    const how = await vxPlay(url);
+    if(how==="blocked"){ VX.tapUrl = url; VX.needTap = true; return; }           // shows «اسمع الرد»: one tap and it plays
+    if(how==="fail" && VX.open && !vxMuted() && !(id && id!==VX.sayN)) await vxSpeakLocal(text);   // the phone couldn't play it: use its own voice
   }catch(e){ if(VX.open && !vxMuted() && !(id && id!==VX.sayN)) await vxSpeakLocal(text); }
 };
 vxSpeakLocal = function(text){
@@ -5658,7 +5677,10 @@ vxSpeakLocal = function(text){
     speechSynthesis.cancel();
     const go = () => {
       const u = new SpeechSynthesisUtterance(String(text).replace(/[✓👋🙏🎉]/g,"")), lang = LANG==="en" ? "en" : "ar";
-      const vs = speechSynthesis.getVoices(), v = vs.find(x=>x.lang && x.lang.toLowerCase().startsWith(lang));
+      const vs = speechSynthesis.getVoices().filter(x=>x.lang && x.lang.toLowerCase().replace("_","-").startsWith(lang));
+      const pref = lang==="ar" ? ["ar-jo","ar-sa","ar-ae","ar-eg","ar"] : ["en-us","en-gb","en"];
+      const score = x => { const l = x.lang.toLowerCase().replace("_","-"); let sc = 10 - Math.max(0, pref.findIndex(p=>l.startsWith(p))); if(/natural|neural|premium|enhanced|google/i.test(x.name)) sc += 5; if(x.localService) sc += 1; return sc; };
+      const v = vs.sort((a,b)=>score(b)-score(a))[0];
       if(v) u.voice = v; u.lang = v ? v.lang : (lang==="ar" ? "ar-SA" : "en-US"); u.rate = 1.02;
       let fin = false; const done = () => { if(fin) return; fin = true; VX.audioDone = null; res(); };
       VX.audioDone = done; u.onend = u.onerror = done; setTimeout(done, Math.min(20000, 2500 + String(text).length*90));
@@ -5679,12 +5701,21 @@ vxSpeakLocal = function(text){
       if(vrCan() || vxSR()) return vxListen();
       const i = document.getElementById("vxText"); if(i) i.focus(); return;
     }
+    if(a==="hear" || a==="replay"){
+      const url = a==="hear" ? VX.tapUrl : VX.lastUrl; VX.needTap = false; VX.tapUrl = "";
+      if(!url) return vxRender();
+      vxStopListening(false);
+      const id = VX.sayN = (VX.sayN||0) + 1; VX.speaking = true; vxRender();
+      vxPlay(url).then(() => { if(id!==VX.sayN || !VX.open) return; VX.speaking = false; vxRender();
+        if(a==="hear" && VX.hands && !VX.busy && (VX.state==="review" || VX.state==="done")) vxListen(); });
+      return;
+    }
     if(a==="confirm" || a==="reset"){ vxStopListening(false); vxStopAll(); }
     return _act(a, el);
   }; }
 
 vxOpen = function(){
-  VX.open = true; VX.state = "idle"; VX.rows = []; VX.lastRows = []; VX.reply = ""; VX.heard = ""; VX.turns = []; VX.hist = []; VX.misses = 0; VX.hands = true; VX.busy = false;
+  VX.open = true; VX.state = "idle"; VX.rows = []; VX.lastRows = []; VX.reply = ""; VX.heard = ""; VX.turns = []; VX.hist = []; VX.misses = 0; VX.hands = true; VX.busy = false; VX.lastUrl = ""; VX.needTap = false;
   try{ (window.dtrack||function(){})("voice_open"); }catch(e){}
   vxUnlockAudio();
   document.getElementById("vx").hidden = false; document.body.classList.add("vx-open");
@@ -5707,4 +5738,52 @@ vxClose = function(){
       if(orb){ orb.classList.add("talk"); orb.innerHTML = icon("vol"); }
     }
     if(VX.state==="listening" && VR.mr && sub) sub.innerHTML = `${t("vxSpeakNow")} · <span class="sub">${t("vxAuto")}</span>`;
+    /* the phone blocked the sound: one tap plays it. Otherwise a small «say it again» */
+    if(sub && (VX.state==="review" || VX.state==="done") && !VX.speaking){
+      if(VX.needTap && VX.tapUrl) sub.insertAdjacentHTML("afterend", `<button type="button" class="btn primary vx-hear" data-vx="hear">${icon("vol")}${t("vxHear")}</button>`);
+      else if(VX.lastUrl && !vxMuted()) sub.insertAdjacentHTML("afterend", `<button type="button" class="vx-again" data-vx="replay">${icon("vol")}${t("vxReplay")}</button>`);
+    }
   }; }
+
+/* =====================================================================
+   v23 «شو الجديد بدفتر»: once after an update, people who already use
+   Daftar see what changed, with a button to try the voice right away.
+   New sign-ups don't see it (everything is new to them).
+   ===================================================================== */
+Object.assign(L, {
+  nwTitle:["شو الجديد بدفتر","What's new in Daftar"],
+  nwVoiceT:["احكي مع دفتر","Talk to Daftar"], nwVoice:["احكيله شو صرفت أو قبضت أو شو ضل عندك، بيرد عليك بصوت وبيسجّل بعد ما تأكد.","Say what you spent, received or have left. It answers out loud and saves after you confirm."],
+  nwTeamT:["الموظفين أسهل","Easier team page"], nwTeam:["ضيف موظف أو سلفة من نفس الصفحة بكبسة.","Add a worker or an advance right from the page."],
+  nwInvT:["تحدّي الدعوات","Invite challenge"], nwInv:["ادعِ أصحاب الشغل، واللي بيدعي أكثر بيربح.","Invite other business owners; whoever invites the most wins."],
+  nwSafeT:["بياناتك محمية","Your data is safe"], nwSafe:["نسخة احتياطية مشفّرة من كل البيانات كل ليلة.","An encrypted backup of all data every night."],
+  nwGoogleT:["دخول بجوجل","Sign in with Google"], nwGoogle:["سجّل دخولك بحساب جوجل بدون كلمة سر.","Sign in with your Google account, no password."],
+  nwTry:["جرّب الصوت هلأ","Try the voice now"], nwOk:["تمام","Got it"],
+});
+const NW_VER = "23";
+function nwSeen(){ try{ return localStorage.getItem("dnew")===NW_VER; }catch(e){ return true; } }
+function nwMark(){ try{ localStorage.setItem("dnew", NW_VER); }catch(e){} }
+function nwShow(){
+  const live = Date.now() < Date.parse("2026-12-01T00:00:00+03:00");
+  const it = (ic, k) => `<div class="nw-i"><span class="nw-ic">${icon(ic)}</span><div><b>${t(k+"T")}</b><span>${t(k)}</span></div></div>`;
+  openSheet({ title:t("nwTitle"), noSave:true, html:`<div class="nw">
+    ${it("mic","nwVoice")}${it("users","nwTeam")}${live?it("trophy","nwInv"):""}${it("check","nwSafe")}${it("globe","nwGoogle")}
+    <div class="nw-act"><button type="button" class="btn primary" data-act="nwTry">${icon("mic")}${t("nwTry")}</button><button type="button" class="btn" data-act="nwOk">${t("nwOk")}</button></div></div>` });
+  nwMark();
+}
+Object.assign(A, {
+  nwOk: () => closeSheet(),
+  nwTry: () => { closeSheet(); setTimeout(()=>{ if(typeof vxOpen==="function") vxOpen(); }, 120); },
+});
+/* who sees it: an owner with real data from before, in the app, with nothing else open */
+(function(){
+  let tries = 0;
+  const iv = setInterval(() => {
+    if(++tries > 240 || nwSeen()){ clearInterval(iv); return; }
+    if(typeof S==="undefined" || S.screen!=="app" || !S.ready || window.DEMO_MODE) return;
+    const sh = document.getElementById("sheet"), vx = document.getElementById("vx");
+    if((sh && !sh.hidden) || (vx && !vx.hidden) || (typeof pushGateEl!=="undefined" && pushGateEl && !pushGateEl.hidden)) return;
+    const used = activeUnits().length + (S.staff||[]).length + (S.expenses||[]).length + (S.income||[]).length;
+    clearInterval(iv);
+    if(used >= 3) setTimeout(nwShow, 900); else nwMark();   // brand-new accounts: nothing to announce
+  }, 1000);
+})();

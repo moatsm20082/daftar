@@ -152,7 +152,7 @@ async function answer(req: Request, body: any, text: string, ctx: any, auth: str
   const via = provider();
   const sys = system(ctx), msgs = convo(body.history, text);
   const inp = via === "groq" ? await viaGroq(sys, msgs) : await viaAnthropic(sys, msgs);
-  if (!inp) return json(req, { err: "ai", ...extra }, 502);
+  if (!inp) { note("ai", `${via} failed`); return json(req, { err: "ai", ...extra }, 502); }
   const acts = (Array.isArray(inp.actions) ? inp.actions : []).filter((a: any) => a && typeof a === "object").slice(0, 8);
   const reply = clip(inp.reply, 400);
   let audio = "", audioType = "";
@@ -185,21 +185,31 @@ const GHOST = /(اشترك|القناة|نانسي|قنقر|ترجمة|المت�
 function unb64(s: string) { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
 function b64(buf: ArrayBuffer) { const u = new Uint8Array(buf); let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); }
 
-async function hear(audio: Uint8Array, mime: string, ctx: any) {
+// the last thing that went wrong with hearing / speaking (no secrets), shown by "health" to find problems fast
+const LAST: { stt: string; tts: string; ai: string } = { stt: "", tts: "", ai: "" };
+const note = (k: "stt" | "tts" | "ai", m: string) => { LAST[k] = `${new Date().toISOString().slice(0, 19)} ${m}`.slice(0, 300); };
+
+async function hear(audio: Uint8Array, mime: string, ctx: any, last = "") {
   const type = (mime.split(";")[0] || "audio/webm").trim();
   const ext = /mp4|m4a|aac/.test(type) ? "mp4" : /ogg/.test(type) ? "ogg" : /wav/.test(type) ? "wav" : /mpeg|mp3/.test(type) ? "mp3" : "webm";
   const names = [...ctx.staff, ...ctx.items, ...ctx.units].slice(0, 25).map((x: any) => x.name).join("، ");
-  const hint = clip((ctx.lang === "en" ? "Daftar. expenses, income, advance, stock, JD. " : "دفتر. اشتريت، صرفت، قبضت، سلفة، دينار، مية، ميتين، ضل عندي. ") + names, 400);
-  const fd = new FormData();
-  fd.append("file", new Blob([audio], { type }), `talk.${ext}`);
-  fd.append("model", env("STT_MODEL") || "whisper-large-v3-turbo");
-  fd.append("language", ctx.lang === "en" ? "en" : "ar");
-  fd.append("response_format", "json");
-  fd.append("temperature", "0");
-  fd.append("prompt", hint);
-  const r = await fetch(`${groq()}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${env("GROQ_API_KEY")}` }, body: fd });
-  if (!r.ok) { console.error("whisper", r.status, (await r.text()).slice(0, 300)); return null; }
-  const out = await r.json();
+  // Whisper reads the hint as "what came before": Daftar's last question and the business's own names
+  const hint = clip((ctx.lang === "en" ? "Daftar. expenses, income, advance, stock, JD. " : "دفتر. اشتريت، صرفت، قبضت، سلفة، دينار، مية، ميتين، ضل عندي. ") + (last ? clip(last, 120) + " " : "") + names, 400);
+  let out: any = null;
+  // the full model hears Arabic best; the turbo one is the backup when it's busy
+  for (const model of [env("STT_MODEL") || "whisper-large-v3", env("STT_MODEL_2") || "whisper-large-v3-turbo"]) {
+    const fd = new FormData();
+    fd.append("file", new Blob([audio], { type }), `talk.${ext}`);
+    fd.append("model", model);
+    fd.append("language", ctx.lang === "en" ? "en" : "ar");
+    fd.append("response_format", "json");
+    fd.append("temperature", "0");
+    fd.append("prompt", hint);
+    const r = await fetch(`${groq()}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${env("GROQ_API_KEY")}` }, body: fd });
+    if (r.ok) { out = await r.json(); break; }
+    const e = (await r.text()).slice(0, 300); console.error("whisper", model, r.status, e); note("stt", `${model} ${r.status} ${e}`);
+  }
+  if (!out) return null;
   const text = clip(out.text, 600).replace(/^[\s.,،؟?!-]+|[\s.,،؟?!-]+$/g, "");
   if (!text || text.length < 2 || GHOST.test(text) || text === clip(hint, 600)) return "";
   return text;
@@ -216,7 +226,7 @@ async function talk(req: Request, body: any) {
   const ctx = context(body.ctx);
   let audio: Uint8Array;
   try { audio = unb64(raw); } catch { return json(req, { err: "bad" }, 400); }
-  const heard = await hear(audio, clip(body.mime, 80), ctx);
+  const heard = await hear(audio, clip(body.mime, 80), ctx, clip(body.last, 200));
   if (heard === null) return json(req, { err: "stt" }, 502);
   if (!heard) return json(req, { heard: "", left: t.left });
   const short = heard.split(/\s+/).length <= 4;
@@ -257,8 +267,8 @@ async function speech(text: string, lang: string): Promise<{ buf: ArrayBuffer; t
       headers: { Authorization: `Bearer ${env("GROQ_API_KEY")}`, "content-type": "application/json" },
       body: JSON.stringify({ model, input, voice: name, response_format: "wav" }),
     });
-    if (r.ok) return { buf: await r.arrayBuffer(), type: "audio/wav" };
-    const e = (await r.text()).slice(0, 300); console.error("groq tts", name, r.status, e);
+    if (r.ok) { LAST.tts = ""; return { buf: await r.arrayBuffer(), type: "audio/wav" }; }
+    const e = (await r.text()).slice(0, 300); console.error("groq tts", name, r.status, e); note("tts", `${model} ${name} ${r.status} ${e}`);
     if (r.status !== 400 && r.status !== 404) break;
   }
   return null;
@@ -280,7 +290,7 @@ export async function handle(req: Request): Promise<Response> {
   if (req.method !== "POST") return json(req, { err: "method" }, 405);
   let body: any = {};
   try { body = await req.json(); } catch { return json(req, { err: "bad" }, 400); }
-  if (body.mode === "health") return json(req, { ai: !!provider(), via: provider(), hear: !!env("GROQ_API_KEY"), voice: voiceOn(), version: 4 });
+  if (body.mode === "health") return json(req, { ai: !!provider(), via: provider(), hear: !!env("GROQ_API_KEY"), voice: voiceOn(), version: 5, last_errors: LAST });
   try {
     if (body.mode === "tts") return await tts(req, body);
     if (body.mode === "talk") return await talk(req, body);

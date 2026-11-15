@@ -687,3 +687,15 @@ button,.nav-i,.qtile,.btn,.row,.chip,.fab,.vx-fab{-webkit-user-select:none;user-
 .vx-orb.talk{background:var(--brand);animation:vxtalk 1.6s ease-in-out infinite}
 @keyframes vxtalk{0%,100%{box-shadow:0 0 0 0 rgba(0,41,163,.28),0 14px 40px rgba(0,41,163,.4)}50%{box-shadow:0 0 0 18px rgba(0,41,163,0),0 14px 40px rgba(0,41,163,.4)}}
 @media (prefers-reduced-motion:reduce){.vx-orb.talk{animation:none}}
+/* v23 «اسمع الرد» / «عيدها», and «شو الجديد» */
+.vx-hear{margin:10px auto 0;display:flex}
+.vx-again{display:inline-flex;align-items:center;gap:6px;margin:8px auto 0;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink-2,inherit);font:inherit;font-size:13px;cursor:pointer}
+.vx-again .ic{width:16px;height:16px}
+.nw{display:flex;flex-direction:column;gap:14px}
+.nw-i{display:flex;gap:12px;align-items:flex-start}
+.nw-i b{display:block;margin-bottom:2px}
+.nw-i span:not(.nw-ic){color:var(--muted,#667);font-size:14px;line-height:1.5}
+.nw-ic{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand)}
+.nw-ic .ic{width:20px;height:20px}
+.nw-act{display:flex;gap:10px;margin-top:6px}
+.nw-act .btn{flex:1;justify-content:center}

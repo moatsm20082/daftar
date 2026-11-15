@@ -310,3 +310,23 @@ section{padding-block:clamp(72px,11vw,140px)}
 .lp-end .end__in .sec-title{position:relative}
 @media (max-width:760px){.lp-hero__in{grid-template-columns:1fr;text-align:center}.lp-lead{margin-inline:auto}.lp-cta{justify-content:center}.lp-phone{max-width:230px}}
 .foot__for{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px} .foot__for a{color:var(--muted);text-decoration:none} .foot__for a:hover{color:var(--brand)}
+/* v23: talk to Daftar + why Daftar */
+.talk{padding-block:clamp(56px,8vw,100px)}
+.talk__in{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(28px,5vw,64px);align-items:center}
+.talk__in>*{min-width:0}
+.talk__pts{list-style:none;padding:0;margin:24px 0 0;display:grid;gap:10px;color:var(--ink-2)}
+.talk__pts li{position:relative;padding-inline-start:26px}
+.talk__pts li::before{content:"";position:absolute;inset-inline-start:0;top:.55em;width:10px;height:10px;border-radius:50%;background:var(--brand)}
+.talk__chat{position:relative;display:flex;flex-direction:column;gap:10px;padding:26px 22px 70px;border-radius:var(--r-lg);background:var(--card);border:1px solid var(--line);box-shadow:0 30px 60px -30px rgba(11,20,51,.25)}
+.talk__b{margin:0;max-width:85%;padding:11px 15px;border-radius:18px;background:color-mix(in srgb,var(--brand) 10%,var(--card));color:var(--ink);line-height:1.55;align-self:flex-end;border-end-end-radius:6px}
+.talk__b--me{align-self:flex-start;background:var(--brand);color:#fff;border-end-end-radius:18px;border-end-start-radius:6px}
+.talk__mic{position:absolute;bottom:16px;inset-inline-start:50%;translate:-50% 0;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:#E5484D;color:#fff;box-shadow:0 0 0 8px rgba(229,72,77,.15)}
+[dir=rtl] .talk__mic{translate:50% 0}
+.talk__mic svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.why{padding-block:clamp(56px,8vw,100px);background:var(--card)}
+.why__grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:36px}
+.why__i{padding:22px;border-radius:var(--r);border:1px solid var(--line);background:var(--paper)}
+.why__i b{display:block;font:500 19px var(--display);margin-bottom:6px;color:var(--ink)}
+.why__i span{color:var(--ink-2);line-height:1.6}
+@media (max-width:860px){.talk__in{grid-template-columns:1fr}.why__grid{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.why__grid{grid-template-columns:1fr}}

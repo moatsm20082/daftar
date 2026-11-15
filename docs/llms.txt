@@ -16,6 +16,7 @@ Currencies: JOD, SAR, AED, EGP, USD and 20+ others
 - General ledger: a ready chart of accounts, automatic double-entry journal entries from every transaction, manual journals, trial balance, income statement and balance sheet. Exports to Excel.
 - Payroll and HR: attendance by tap, overtime, advances, social security (employee 7.5% and employer 14.25%, editable), income tax withholding estimates, annual and sick leave, payslips and a monthly social security sheet.
 - Point of sale: a fast cashier screen with a printable thermal receipt.
+- Voice assistant: talk to Daftar in Jordanian Arabic or English ("bought concrete for 100, 60 tiles left"); it answers out loud, shows what it understood, and saves expenses, income, stock counts, staff advances and attendance only after you confirm. It also answers questions like "how much profit this month?".
 - Cash radar: a day-by-day cash forecast up to 90 days from post-dated cheques, unpaid invoices, wages, social security and sales tax. It warns weeks before a shortfall and suggests who to collect from or which bill to postpone.
 - Barcodes: scan with a USB/Bluetooth reader or the phone camera at the point of sale and on invoices; print barcode labels with prices (label printer or A4).
 - Thermal receipts sized for 80 mm and 58 mm printers.
