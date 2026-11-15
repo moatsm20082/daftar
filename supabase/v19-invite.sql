@@ -149,7 +149,7 @@ begin
           from public.companies c join public.companies p on p.id = c.referred_by
          where c.created_at >= k.starts_at and c.created_at < k.ends_at
          group by p.id, p.name, p.ref_code
-         order by 5 desc, 4 desc
+         order by 6 desc, 5 desc
          limit 50) x), '[]'::json));
 end $$;
 
