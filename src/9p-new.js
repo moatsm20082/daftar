@@ -11,22 +11,26 @@ Object.assign(L, {
   nwInvT:["تحدّي الدعوات","Invite challenge"], nwInv:["ادعِ أصحاب الشغل، واللي بيدعي أكثر بيربح.","Invite other business owners; whoever invites the most wins."],
   nwSafeT:["بياناتك محمية","Your data is safe"], nwSafe:["نسخة احتياطية مشفّرة من كل البيانات كل ليلة.","An encrypted backup of all data every night."],
   nwGoogleT:["دخول بجوجل","Sign in with Google"], nwGoogle:["سجّل دخولك بحساب جوجل بدون كلمة سر.","Sign in with your Google account, no password."],
-  nwTry:["جرّب الصوت هلأ","Try the voice now"], nwOk:["تمام","Got it"],
+  nwSnapT:["صوّر ودفتر بيقرأ","Snap it, Daftar reads it"], nwSnap:["صوّر فاتورة أو وصل أو شيك، ودفتر بيعبّيلك كل إشي.","Snap a receipt, bill or cheque and Daftar fills it in."],
+  nwLookT:["شكل جديد","A new look"], nwLook:["رئيسية جديدة، وزر + بالنص لكل إشي.","A new home and a + in the middle for everything."],
+  nwVoice2T:["الصوت بيفهم زباينك","Voice knows your customers"], nwVoice2:["«قبضت من أبو أحمد مية»، «شو صار اليوم؟» وأكثر.","\"Got 100 from Abu Ahmad\", \"How was today?\" and more."],
+  nwBellT:["إشعارات بوقتها","Timely notifications"], nwBell:["ملخص كل يوم، وتنبيه لما الدعم يرد عليك.","A daily summary, and a heads-up when support replies."],
+  nwTry:["جرّب «صوّر» هلأ","Try «Snap» now"], nwOk:["تمام","Got it"],
 });
-const NW_VER = "23";
+const NW_VER = "24";
 function nwSeen(){ try{ return localStorage.getItem("dnew")===NW_VER; }catch(e){ return true; } }
 function nwMark(){ try{ localStorage.setItem("dnew", NW_VER); }catch(e){} }
 function nwShow(){
   const live = Date.now() < Date.parse("2026-12-01T00:00:00+03:00");
   const it = (ic, k) => `<div class="nw-i"><span class="nw-ic">${icon(ic)}</span><div><b>${t(k+"T")}</b><span>${t(k)}</span></div></div>`;
   openSheet({ title:t("nwTitle"), noSave:true, html:`<div class="nw">
-    ${it("mic","nwVoice")}${it("users","nwTeam")}${live?it("trophy","nwInv"):""}${it("check","nwSafe")}${it("globe","nwGoogle")}
-    <div class="nw-act"><button type="button" class="btn primary" data-act="nwTry">${icon("mic")}${t("nwTry")}</button><button type="button" class="btn" data-act="nwOk">${t("nwOk")}</button></div></div>` });
+    ${it("camera","nwSnap")}${it("mic","nwVoice2")}${it("home","nwLook")}${it("bell","nwBell")}${live?it("trophy","nwInv"):""}
+    <div class="nw-act"><button type="button" class="btn primary" data-act="nwTry">${icon("camera")}${t("nwTry")}</button><button type="button" class="btn" data-act="nwOk">${t("nwOk")}</button></div></div>` });
   nwMark();
 }
 Object.assign(A, {
   nwOk: () => closeSheet(),
-  nwTry: () => { closeSheet(); setTimeout(()=>{ if(typeof vxOpen==="function") vxOpen(); }, 120); },
+  nwTry: () => { closeSheet(); setTimeout(()=>{ if(A.snap) A.snap(); else if(typeof vxOpen==="function") vxOpen(); }, 120); },
 });
 /* who sees it: an owner with real data from before, in the app, with nothing else open */
 (function(){

@@ -2,6 +2,9 @@
 //  - mode "digest"    : called by pg_cron with x-cron-secret → morning "due today" / evening "today's summary" per company
 //  - mode "broadcast" : called from the admin console with the admin's session (must be a platform admin with 2-step sign-in)
 //  - mode "test"      : called by a signed-in user → one test notification to their own devices
+//  - mode "welcome"   : called by the database (x-cron-secret) the first time someone turns notifications on
+//  - mode "ticket"    : called by the database (x-cron-secret) when the support team replies to someone
+// The secret is CRON_SECRET (Edge Function env) or, when that isn't set, the cron_secret row of public.app_cfg.
 // Secrets (Edge Function env): VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT, CRON_SECRET.
 // SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 import webpush from "npm:web-push@3.6.7";
@@ -28,6 +31,13 @@ const cors = (req: Request) => {
   return { "Access-Control-Allow-Origin": ok ? o : ORIGIN, "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods": "POST, OPTIONS", "Vary": "Origin" };
 };
 const json = (req: Request, body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors(req), "Content-Type": "application/json" } });
+let dbSecret = "";
+async function cronOk(req: Request) {
+  const got = req.headers.get("x-cron-secret") || "";
+  if (CRON && safeEq(got, CRON)) return true;
+  if (!dbSecret) { const { data } = await db.from("app_cfg").select("v").eq("k", "cron_secret").maybeSingle(); dbSecret = (data && (data as { v: string }).v) || ""; }
+  return !!dbSecret && safeEq(got, dbSecret);
+}
 const safeEq = (a: string, b: string) => { if (!a || a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; };
 
 type Sub = { id: number; user_id: string; company_id: string | null; endpoint: string; p256dh: string; auth: string; lang: string; morning: boolean; evening: boolean; news: boolean; fails: number };
@@ -56,6 +66,20 @@ async function send(subs: Sub[], msg: (s: Sub) => Msg | null) {
 }
 
 // ---------- the daily digest ----------
+// nothing recorded today: a short, friendly reminder (a different one each day)
+const NUDGE: [string, string, string, string][] = [
+  ["سجّلت مصاريف اليوم؟", "احكي لدفتر شو صرفت اليوم، وهو بيسجّل عنك.", "Logged today's expenses?", "Tell Daftar what you spent today and it records it for you."],
+  ["دقيقة وحدة لحساباتك", "اكبس المايك واحكي: «اشتريت بنزين بعشرين»، وخلصت.", "One minute for your books", "Tap the mic and say what you spent. Done."],
+  ["مين داوم اليوم؟", "سجّل دوام الشباب قبل ما تنسى، بكبسة وحدة.", "Who worked today?", "Mark today's attendance before you forget. One tap."],
+  ["قبضت إشي اليوم؟", "سجّله هلأ عشان تعرف ربحك الحقيقي آخر الشهر.", "Got paid today?", "Record it now so your month-end profit is real."],
+  ["صوّر الفاتورة وخلص", "صوّر أي فاتورة أو وصل، ودفتر بيقرأه وبيسجّله.", "Snap the receipt", "Take a photo of any receipt and Daftar reads it for you."],
+  ["حساباتك مرتّبة؟", "خمس دقايق هلأ بتوفّر عليك ساعات آخر الشهر.", "Books in order?", "Five minutes now saves hours at month end."],
+  ["شو ضل عندك بالمخزن؟", "احكي لدفتر «ضل عندي ستين بلاطة» وهو بيحدّث المخزون.", "What's left in stock?", "Say \"60 tiles left\" and Daftar updates your stock."],
+];
+function nudge(en: boolean, today: string): Msg {
+  const d = Number(today.slice(8, 10)) + Number(today.slice(5, 7)) * 31, n = NUDGE[d % NUDGE.length];
+  return { title: en ? n[2] : n[0], body: en ? n[3] : n[1], url: "/app/?voice=1", tag: "digest-evening" };
+}
 const ammanToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const addDays = (d: string, n: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const num = (v: unknown) => { const n = Number(v); return isFinite(n) ? n : 0; };
@@ -115,7 +139,7 @@ function digest(slot: "morning" | "evening", co: { name: string; settings: Recor
     const tm = addDays(today, 1), open = chq.filter((q) => q.dueDate === tm && ["pending", "deposited", "handed"].includes(String(q.status)));
     const tIn = open.filter((q) => q.dir === "in").reduce((s, q) => s + num(q.amount), 0), tOut = open.filter((q) => q.dir === "out").reduce((s, q) => s + num(q.amount), 0);
     if (tIn || tOut) lines.push((en ? "Cheques tomorrow: " : "شيكات بكرة: ") + [tIn ? (en ? `in ${m(tIn)}` : `إلك ${m(tIn)}`) : "", tOut ? (en ? `out ${m(tOut)}` : `عليك ${m(tOut)}`) : ""].filter(Boolean).join(" · "));
-    if (!lines.length) return null;
+    if (!lines.length) return nudge(en, today);
     return { title: en ? `Today at ${co.name}` : `ملخص اليوم · ${co.name}`, body: lines.join("\n"), url: "/app/", tag: "digest-evening" };
   }
   // morning: what is due today
@@ -170,10 +194,24 @@ Deno.serve(async (req) => {
   const mode = String(b.mode || "");
   if (!vapid()) return json(req, { error: "not configured" }, 503);
 
-  if (mode === "digest") {
-    if (!CRON || !safeEq(req.headers.get("x-cron-secret") || "", CRON)) return json(req, { error: "forbidden" }, 403);
-    const slot = b.slot === "morning" ? "morning" : "evening";
-    return json(req, await runDigest(slot));
+  if (mode === "digest" || mode === "welcome" || mode === "ticket") {
+    if (!(await cronOk(req))) return json(req, { error: "forbidden" }, 403);
+    if (mode === "digest") return json(req, await runDigest(b.slot === "morning" ? "morning" : "evening"));
+    if (mode === "welcome") {
+      const uid = String(b.user || ""); if (!/^[0-9a-f-]{36}$/.test(uid)) return json(req, { error: "bad" }, 400);
+      const { data: subs } = await db.from("push_subs").select("*").eq("user_id", uid);
+      return json(req, await send((subs || []) as Sub[], (s) => s.lang === "en"
+        ? { title: "Welcome to Daftar", body: "This is where your daily summary and cheque and invoice reminders will arrive. Try it now: tap the mic and tell Daftar your first expense.", url: "/app/?voice=1", tag: "welcome" }
+        : { title: "أهلاً فيك بدفتر", body: "من هون رح يوصلك ملخص يومك وتنبيهات الشيكات والفواتير. جرّب هلأ: اكبس المايك واحكي لدفتر أول مصروف.", url: "/app/?voice=1", tag: "welcome" }));
+    }
+    const tid = String(b.id || ""); if (!/^[0-9a-f-]{36}$/.test(tid)) return json(req, { error: "bad" }, 400);
+    const { data: tk } = await db.from("support_tickets").select("user_id,messages").eq("id", tid).maybeSingle();
+    if (!tk || !tk.user_id) return json(req, { sent: 0 });
+    const ms = (tk.messages || []) as { role: string; text: string }[], last = ms[ms.length - 1];
+    if (!last || last.role !== "support") return json(req, { sent: 0 });
+    const snip = String(last.text || "").replace(/\s+/g, " ").trim(), short = snip.length > 140 ? snip.slice(0, 137) + "…" : snip;
+    const { data: subs } = await db.from("push_subs").select("*").eq("user_id", tk.user_id);
+    return json(req, await send((subs || []) as Sub[], (s) => ({ title: s.lang === "en" ? "The Daftar team replied" : "فريق دفتر ردّ عليك", body: short, url: "/app/?support=1", tag: "support" })));
   }
 
   const who = await caller(req); if (!who) return json(req, { error: "sign in" }, 401);

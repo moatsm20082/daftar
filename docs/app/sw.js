@@ -1,6 +1,6 @@
 // Service worker: يخلّي التطبيق يفتح بسرعة وينزل على الشاشة.
 // بيخزّن ملفات الموقع بس — أبداً ما بيخزّن بيانات الشركات (طلبات Supabase بتروح للنت دايماً).
-const CACHE = "daftar-app-v23";
+const CACHE = "daftar-app-v24";
 const SHELL = ["./", "index.html", "privacy.html", "style.css", "app.js", "config.js", "vendor/supabase.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "fonts/plex-arabic-400.woff2", "fonts/plex-arabic-500.woff2", "fonts/plex-arabic-700.woff2", "fonts/alexandria-arabic-600-normal.woff2"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -27,7 +27,7 @@ self.addEventListener("notificationclick", e => {
   e.notification.close();
   const url = new URL((e.notification.data && e.notification.data.url) || "/app/", self.location.origin).href;
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(ws => {
-    for (const w of ws) if (w.url.startsWith(self.location.origin + "/app/") && "focus" in w) return w.focus();
+    for (const w of ws) if (w.url.startsWith(self.location.origin + "/app/") && "focus" in w) { try { w.postMessage({ type: "daftar-open", url }); } catch (_) {} return w.focus(); }
     return self.clients.openWindow(url);
   }));
 });

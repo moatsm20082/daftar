@@ -40,7 +40,13 @@ const TOOL = {
         items: {
           type: "object",
           properties: {
-            type: { type: "string", enum: ["expense", "income", "stock", "advance", "attendance", "ask"] },
+            type: { type: "string", enum: ["expense", "income", "stock", "advance", "attendance", "ask", "receipt", "payment", "sale"], description: "receipt = money received FROM a named customer/person; payment = money paid TO a named supplier/person; sale = sold to a named customer on account / make an invoice. Use expense/income only when no person or company is named." },
+            party: { type: "string", description: "receipt/payment/sale: the customer or supplier name as said, e.g. 'أبو أحمد'." },
+            party_id: { type: "string", description: "Matching party id from the list if it exists." },
+            method: { type: "string", enum: ["cash", "cheque", "transfer", "card"], description: "receipt/payment: how. 'شيك' = cheque, 'تحويل' = transfer." },
+            cheque_no: { type: "string", description: "Cheque number if said." },
+            due_date: { type: "string", description: "Cheque due date YYYY-MM-DD if said ('آخر الشهر' = last day of this month)." },
+            price: { type: "number", description: "sale: unit price if a quantity is given." },
             amount: { type: "number", description: "Money amount (expense, income, advance). Never guess." },
             category: { type: "string", description: "Category id from the given list for the chosen kind, closest match. Omit if unsure." },
             desc: { type: "string", description: "Short description in the user's words, e.g. 'باطون' or 'بنزين'." },
@@ -53,7 +59,7 @@ const TOOL = {
             staff_ids: { type: "array", items: { type: "string" }, description: "Staff ids from the list (advance: exactly one; attendance: the named ones)." },
             all_staff: { type: "boolean", description: "attendance: true when they mean everyone ('كل الشباب')." },
             status: { type: "string", enum: ["present", "absent"] },
-            metric: { type: "string", enum: ["profit", "expenses", "income", "salaries"], description: "ask: what they want to know." },
+            metric: { type: "string", enum: ["profit", "expenses", "income", "salaries", "summary", "owed_to_me", "i_owe"], description: "ask: what they want to know. summary = 'شو صار اليوم/هالشهر'; owed_to_me = who owes me / how much people owe me; i_owe = how much I owe suppliers." },
             period: { type: "string", enum: ["today", "week", "month", "last_month"], description: "ask: the period." },
           },
           required: ["type"],
@@ -73,12 +79,22 @@ Rules:
 - "اشتريت/دفعت/صرفت X بـ/على Y" is an expense. "قبضت/إجاني/بعت بـ" money in is income. A loan or advance to a worker ("سلفة", "سلّفت") is an advance for that one staff member.
 - A number of things without a price ("اشتريت ميت بلوكة", "ضل عندي ستين بلاطة") is stock, not money. "ضل عندي / باقي عندي" means mode count; "استعملت / بعت" means out; "إجاني / اشتريت" means in. If they give both a price and a quantity, add both an expense (with the price) and a stock action (with the quantity).
 - "الشباب/العمال اشتغلوا اليوم" is attendance (present). "ما إجا / غاب" is absent.
+- A named customer or supplier changes the type: "قبضت من أبو أحمد مية" is receipt (party أبو أحمد, 100); "دفعت لأبو خالد ميتين" or "سدّدت للمورّد" is payment; "بعت لأبو أحمد بمية على الحساب" / "اعمل فاتورة لأبو أحمد بمية" / "حطها على حساب أبو أحمد" is sale. "إجاني شيك من أبو علي بألف" is receipt with method cheque; "كتبت شيك لأبو خالد" is payment with method cheque.
+- More money words: "ميتين ونص" 250, "ألف وخمسمية" 1500, "خمسطعشر" 15, "عشرين ليرة" 20, "ربع" 0.25, "تمن" ثمانية 8, "مية وخمسين" 150. "رجّعلي خمسين" from a person = receipt 50.
+- "شو صار اليوم؟" / "كيف الشغل اليوم؟" is ask metric summary, period today. "مين إلي عنده مصاري؟" is ask metric owed_to_me. "قديش عليّ للموردين؟" is ask metric i_owe.
 - Questions like "قديش ربحت هالشهر؟" are an "ask" action; the app does the math, so reply with something like "لحظة، هاي النتيجة" without numbers.
 - Use only ids that appear in the lists. Pick the closest category id for the kind; if nothing fits, omit category.
 - This is a back-and-forth conversation. If the owner is answering your last question (a missing amount, which worker, which project) or correcting you, combine it with what was said before and return the complete list of actions again.
 - Today is ${ctx.today}. Reply in ${ctx.lang === "en" ? "English" : "Jordanian Arabic"}, at most 25 words, warm and natural like a helpful assistant at the shop, and end with a short request to confirm when there is something to save.
 
-Business data (JSON): ${JSON.stringify({ projects: ctx.units, staff: ctx.staff, stock_items: ctx.items, expense_categories: ctx.expense_categories, income_categories: ctx.income_categories })}`;
+Examples (owner → actions):
+«اشتريت اسمنت بتلتمية وخمسين» → expense 350, desc اسمنت.
+«الشباب كلهم داوموا إلا خالد» → attendance present for everyone except Khaled, and attendance absent for Khaled.
+«سلّفت أبو علي خمسين» (أبو علي is staff) → advance 50.
+«قبضت من شركة النور ألف بشيك مستحق آخر الشهر» → receipt 1000, party شركة النور, method cheque, due_date end of month.
+«استعملنا عشرين كيس اسمنت» → stock out 20 اسمنت.
+
+Business data (JSON): ${JSON.stringify({ projects: ctx.units, staff: ctx.staff, stock_items: ctx.items, parties: ctx.parties, expense_categories: ctx.expense_categories, income_categories: ctx.income_categories })}`;
 }
 
 // earlier turns of the same conversation (plain text only), always starting with the owner and alternating
@@ -144,7 +160,7 @@ function context(c: any) {
   const list = (a: any, n: number) => (Array.isArray(a) ? a : []).slice(0, n).map((x: any) => ({ id: clip(x.id, 60), name: clip(x.name, 60) }));
   const cats = (a: any) => (Array.isArray(a) ? a : []).slice(0, 40).map((x: any) => ({ id: clip(x.id, 40), label: clip(x.label, 40) }));
   return { today: /^\d{4}-\d{2}-\d{2}$/.test(c.today) ? c.today : new Date().toISOString().slice(0, 10), lang: c.lang === "en" ? "en" : "ar", currency: clip(c.currency, 20),
-    units: list(c.units, 40), staff: list(c.staff, 80), items: list(c.items, 150), expense_categories: cats(c.cats?.exp), income_categories: cats(c.cats?.inc) };
+    units: list(c.units, 40), staff: list(c.staff, 80), items: list(c.items, 150), parties: list(c.parties, 150), company: clip(c.company, 80), expense_categories: cats(c.cats?.exp), income_categories: cats(c.cats?.inc) };
 }
 
 // understand + (when asked) the spoken answer; shared by "ask" and "talk"
@@ -186,8 +202,8 @@ function unb64(s: string) { const bin = atob(s); const u = new Uint8Array(bin.le
 function b64(buf: ArrayBuffer) { const u = new Uint8Array(buf); let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); }
 
 // the last thing that went wrong with hearing / speaking (no secrets), shown by "health" to find problems fast
-const LAST: { stt: string; tts: string; ai: string } = { stt: "", tts: "", ai: "" };
-const note = (k: "stt" | "tts" | "ai", m: string) => { LAST[k] = `${new Date().toISOString().slice(0, 19)} ${m}`.slice(0, 300); };
+const LAST: { stt: string; tts: string; ai: string; vision: string } = { stt: "", tts: "", ai: "", vision: "" };
+const note = (k: "stt" | "tts" | "ai" | "vision", m: string) => { LAST[k] = `${new Date().toISOString().slice(0, 19)} ${m}`.slice(0, 300); };
 
 async function hear(audio: Uint8Array, mime: string, ctx: any, last = "") {
   const type = (mime.split(";")[0] || "audio/webm").trim();
@@ -233,6 +249,84 @@ async function talk(req: Request, body: any) {
   if (short && (YES.test(heard) || NO.test(heard) || BYE.test(heard))) return json(req, { heard, skip: true, left: t.left });
   if (!provider()) return json(req, { err: "not_ready" }, 503);
   return await answer(req, body, heard, ctx, auth, t.left, { heard });
+}
+
+// ---------- seeing: a photo of a receipt, a supplier invoice or a cheque → the fields to record
+const PHOTO_TOOL = {
+  name: "daftar_photo",
+  description: "What this document is and the fields to record in Daftar.",
+  input_schema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["receipt", "supplier_invoice", "sales_invoice", "cheque", "other"], description: "receipt = a shop/fuel/restaurant receipt the owner paid; supplier_invoice = a bill from a supplier to the owner; sales_invoice = an invoice the owner issued to a customer; cheque = a bank cheque; other = not a money document." },
+      reply: { type: "string", description: "One short sentence in the owner's language (Jordanian Arabic when Arabic) saying what was read, e.g. 'هاي فاتورة محطة بنزين بعشرين دينار'. No emoji." },
+      merchant: { type: "string", description: "Shop, supplier or customer name printed on it." },
+      date: { type: "string", description: "Document date YYYY-MM-DD if printed." },
+      total: { type: "number", description: "The final total to pay, as a plain decimal number in the document's currency (Jordanian amounts often have 3 decimals: 12.500 = twelve and a half). Never guess." },
+      tax: { type: "number", description: "Tax amount if printed." },
+      currency: { type: "string", description: "ISO code if visible, e.g. JOD, SAR, AED." },
+      invoice_no: { type: "string", description: "Invoice or receipt number if printed." },
+      items: { type: "array", maxItems: 30, items: { type: "object", properties: { name: { type: "string" }, qty: { type: "number" }, price: { type: "number", description: "unit price" } }, required: ["name"] } },
+      category: { type: "string", description: "Closest expense category id from the given list (receipts and supplier invoices). Omit if unsure." },
+      cheque: { type: "object", properties: {
+        number: { type: "string" }, bank: { type: "string" }, amount: { type: "number" },
+        due_date: { type: "string", description: "YYYY-MM-DD" },
+        payee: { type: "string", description: "Who it is paid to (ادفعوا لأمر)." },
+        drawer: { type: "string", description: "Whose account it is drawn on / the signer, if printed." },
+        dir: { type: "string", enum: ["in", "out"], description: "in when it is paid to the owner's company (payee matches the company name), out when the owner's company wrote it (drawer matches the company)." },
+      } },
+    },
+    required: ["kind", "reply"],
+  },
+};
+function photoSystem(ctx: any) {
+  return `You read photos of money documents for Daftar, an accounting app for small businesses in Jordan and the Gulf. Documents are in Arabic, English or both, often printed thermal receipts or handwritten cheques.
+Read carefully and only report what is printed or clearly handwritten. Never invent numbers. If the total is unclear, leave it out and say so in the reply.
+The owner's company is «${clip(ctx.company, 80) || "?"}». Today is ${ctx.today}. Reply in ${ctx.lang === "en" ? "English" : "Jordanian Arabic"}.
+Expense categories: ${JSON.stringify(ctx.expense_categories)}`;
+}
+async function viaVision(sys: string, dataUrl: string) {
+  const models = [env("VISION_MODEL") || "qwen/qwen3.8-27b", env("VISION_MODEL_2") || "meta-llama/llama-4-scout-17b-16e-instruct"];
+  const user = { role: "user", content: [{ type: "text", text: "Read this document and call daftar_photo." }, { type: "image_url", image_url: { url: dataUrl } }] };
+  for (const model of models) {
+    for (const mode of ["tool", "json"]) {
+      const body: any = { model, temperature: 0, max_completion_tokens: 1800, messages: [{ role: "system", content: sys }, user] };
+      if (mode === "tool") { body.tools = [{ type: "function", function: { name: PHOTO_TOOL.name, description: PHOTO_TOOL.description, parameters: PHOTO_TOOL.input_schema } }]; body.tool_choice = { type: "function", function: { name: PHOTO_TOOL.name } }; }
+      else { body.response_format = { type: "json_object" }; body.messages[0].content = sys + "\nAnswer with one JSON object with these fields: " + JSON.stringify(PHOTO_TOOL.input_schema.properties); }
+      const r = await fetch(`${groq()}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${env("GROQ_API_KEY")}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) { const e = (await r.text()).slice(0, 300); console.error("vision", model, mode, r.status, e); note("vision", `${model} ${mode} ${r.status} ${e}`); if (r.status === 429 || r.status >= 500) break; continue; }
+      const out = await r.json(), msg = out.choices?.[0]?.message || {};
+      try {
+        if (mode === "tool") { const call = (msg.tool_calls || []).find((c: any) => c.function?.name === PHOTO_TOOL.name); if (call) return JSON.parse(call.function.arguments || "{}"); }
+        else { const txt = String(msg.content || "").replace(/^[^{]*/, "").replace(/[^}]*$/, ""); if (txt) return JSON.parse(txt); }
+      } catch { console.error("vision bad json", model, mode); }
+    }
+  }
+  return null;
+}
+async function photo(req: Request, body: any) {
+  if (!env("GROQ_API_KEY")) return json(req, { err: "not_ready" }, 503);
+  const img = String(body.image || "");
+  if (img.length < 1000) return json(req, { err: "empty" }, 400);
+  if (img.length > 7_000_000) return json(req, { err: "big" }, 413);
+  if (!/^[A-Za-z0-9+/=]+$/.test(img.slice(0, 2000))) return json(req, { err: "bad" }, 400);
+  const auth = req.headers.get("authorization") || "";
+  const t = await take(auth, "ask");
+  if (!t.ok) return json(req, { err: t.err || "limit" }, t.err === "auth" ? 401 : 429);
+  const ctx = context(body.ctx);
+  const out = await viaVision(photoSystem(ctx), "data:image/jpeg;base64," + img);
+  if (!out) return json(req, { err: "ai" }, 502);
+  const n = (v: any) => (typeof v === "number" && isFinite(v) && v >= 0 && v < 1e9 ? Math.round(v * 1000) / 1000 : undefined);
+  const d = (v: any) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+  const ch = out.cheque && typeof out.cheque === "object" ? out.cheque : null;
+  return json(req, {
+    kind: ["receipt", "supplier_invoice", "sales_invoice", "cheque", "other"].includes(out.kind) ? out.kind : "other",
+    reply: clip(out.reply, 300), merchant: clip(out.merchant, 80), date: d(out.date), total: n(out.total), tax: n(out.tax),
+    currency: clip(out.currency, 6), invoice_no: clip(out.invoice_no, 40), category: clip(out.category, 40),
+    items: (Array.isArray(out.items) ? out.items : []).slice(0, 30).map((x: any) => ({ name: clip(x && x.name, 80), qty: n(x && x.qty), price: n(x && x.price) })).filter((x: any) => x.name),
+    cheque: ch ? { number: clip(ch.number, 30), bank: clip(ch.bank, 40), amount: n(ch.amount), due_date: d(ch.due_date), payee: clip(ch.payee, 80), drawer: clip(ch.drawer, 80), dir: ch.dir === "out" ? "out" : "in" } : null,
+    left: t.left,
+  });
 }
 
 // ---------- speaking
@@ -290,10 +384,11 @@ export async function handle(req: Request): Promise<Response> {
   if (req.method !== "POST") return json(req, { err: "method" }, 405);
   let body: any = {};
   try { body = await req.json(); } catch { return json(req, { err: "bad" }, 400); }
-  if (body.mode === "health") return json(req, { ai: !!provider(), via: provider(), hear: !!env("GROQ_API_KEY"), voice: voiceOn(), version: 5, last_errors: LAST });
+  if (body.mode === "health") return json(req, { ai: !!provider(), via: provider(), hear: !!env("GROQ_API_KEY"), voice: voiceOn(), version: 6, see: !!env("GROQ_API_KEY"), last_errors: LAST });
   try {
     if (body.mode === "tts") return await tts(req, body);
     if (body.mode === "talk") return await talk(req, body);
+    if (body.mode === "photo") return await photo(req, body);
     return await ask(req, body);
   } catch (e) { console.error(e); return json(req, { err: "server" }, 500); }
 }
