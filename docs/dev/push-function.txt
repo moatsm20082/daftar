@@ -1,27 +1,82 @@
-// Daftar push notifications (Supabase Edge Function "push").
+// Daftar push notifications (Supabase Edge Function "push") — v18 (WebCrypto sender, failure reasons, admin server test). v19: names on cheque reminders, Thursday week summary, spending alert.
+//  - mode "ping"      : anyone (also pg_cron every 2 min) → sends what the database queued: support alerts to the admin,
+//                       "the team replied" to the customer, and scheduled news. Each item is claimed once, so nothing repeats.
+//  - mode "health"    : is the function set up (VAPID keys present)? no secrets in the answer
+//  - mode "welcome"   : (v18) the database calls it the first time someone turns notifications on → a welcome on their phone
+//  - evening digest   : (v18) when nothing was recorded today, a short friendly reminder instead of silence
 //  - mode "digest"    : called by pg_cron with x-cron-secret → morning "due today" / evening "today's summary" per company
 //  - mode "broadcast" : called from the admin console with the admin's session (must be a platform admin with 2-step sign-in)
 //  - mode "test"      : called by a signed-in user → one test notification to their own devices
-//  - mode "welcome"   : called by the database (x-cron-secret) the first time someone turns notifications on
-//  - mode "ticket"    : called by the database (x-cron-secret) when the support team replies to someone
-// The secret is CRON_SECRET (Edge Function env) or, when that isn't set, the cron_secret row of public.app_cfg.
 // Secrets (Edge Function env): VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT, CRON_SECRET.
 // SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
-import webpush from "npm:web-push@3.6.7";
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const CRON = Deno.env.get("CRON_SECRET") || "";
-let vapidReady = false;
-function vapid() {   // set lazily so a missing secret gives a clear error instead of a crashed function
-  if (vapidReady) return true;
-  const pub = Deno.env.get("VAPID_PUBLIC"), priv = Deno.env.get("VAPID_PRIVATE");
-  if (!pub || !priv) return false;
-  webpush.setVapidDetails(Deno.env.get("VAPID_SUBJECT") || "mailto:hello@daftarapp.co", pub, priv);
-  return (vapidReady = true);
+const CRON_ENV = Deno.env.get("CRON_SECRET") || "";
+let cronDb: string | null = null, cronCfg: string | null = null;
+async function cronOk(given: string) {   // the secret from the Edge Function settings, or the one v15 generated inside the database
+  if (CRON_ENV && safeEq(given, CRON_ENV)) return true;
+  if (cronDb === null) { const { data } = await db.from("app_secrets").select("value").eq("name", "cron").maybeSingle(); cronDb = (data && data.value) || ""; }
+  if (cronDb && safeEq(given, cronDb)) return true;
+  if (cronCfg === null) { const { data } = await db.from("app_cfg").select("v").eq("k", "cron_secret").maybeSingle(); cronCfg = (data && (data as { v: string }).v) || ""; }
+  return !!cronCfg && safeEq(given, cronCfg);
 }
+// ---------- Web Push, written on the platform's own WebCrypto (no npm push library) ----------
+// RFC 8291 (message encryption, aes128gcm) + RFC 8292 (VAPID). Works the same in any Deno/edge runtime.
+const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (s: string) => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)); };
+const te = new TextEncoder();
+const cat = (...a: Uint8Array[]) => { const o = new Uint8Array(a.reduce((n, x) => n + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+let V: { pub: string; key: CryptoKey; subject: string } | null = null;
+async function vapidKey() {
+  if (V) return V;
+  const pub = Deno.env.get("VAPID_PUBLIC"), priv = Deno.env.get("VAPID_PRIVATE");
+  if (!pub || !priv) return null;
+  const P = unb64u(pub.trim());
+  const key = await crypto.subtle.importKey("jwk", { kty: "EC", crv: "P-256", d: priv.trim(), x: b64u(P.slice(1, 33)), y: b64u(P.slice(33, 65)), ext: true },
+    { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  let subject = (Deno.env.get("VAPID_SUBJECT") || "").trim(); if (!/^(mailto:|https:)/.test(subject)) subject = "mailto:daftarapp.jo@gmail.com";
+  return (V = { pub: pub.trim(), key, subject });
+}
+const jwtCache = new Map<string, { t: string; exp: number }>();
+async function vapidAuth(endpoint: string) {
+  const v = (await vapidKey())!; const aud = new URL(endpoint).origin; const now = Math.floor(Date.now() / 1000);
+  const c = jwtCache.get(aud); if (c && c.exp - now > 3600) return `vapid t=${c.t}, k=${v.pub}`;
+  const exp = now + 12 * 3600;
+  const h = b64u(te.encode(JSON.stringify({ typ: "JWT", alg: "ES256" }))), p = b64u(te.encode(JSON.stringify({ aud, exp, sub: v.subject })));
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, v.key, te.encode(h + "." + p)));
+  const t = `${h}.${p}.${b64u(sig)}`; jwtCache.set(aud, { t, exp }); return `vapid t=${t}, k=${v.pub}`;
+}
+async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, len: number) {
+  const k = await crypto.subtle.importKey("raw", ikm as BufferSource, "HKDF", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: salt as BufferSource, info: info as BufferSource }, k, len * 8));
+}
+async function encrypt(p256dh: string, authSecret: string, payload: Uint8Array) {
+  const ua = unb64u(p256dh), auth = unb64u(authSecret);
+  const eph = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]) as CryptoKeyPair;
+  const asPub = new Uint8Array(await crypto.subtle.exportKey("raw", eph.publicKey));
+  const uaKey = await crypto.subtle.importKey("raw", ua, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, eph.privateKey, 256));
+  const ikm = await hkdf(auth, shared, cat(te.encode("WebPush: info\0"), ua, asPub), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, te.encode("Content-Encoding: aes128gcm\0"), 16);
+  const nonce = await hkdf(salt, ikm, te.encode("Content-Encoding: nonce\0"), 12);
+  const k = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, k, cat(payload, new Uint8Array([2]))));
+  const rs = new Uint8Array([0, 0, 16, 0]);   // record size 4096
+  return cat(salt, rs, new Uint8Array([asPub.length]), asPub, ct);
+}
+class PushError extends Error { constructor(public statusCode: number, public body: string) { super(`push ${statusCode} ${body}`); } }
+async function pushOne(endpoint: string, p256dh: string, auth: string, payload: string, ttl: number) {
+  const body = await encrypt(p256dh, auth, te.encode(payload));
+  const r = await fetch(endpoint, { method: "POST", headers: { "Authorization": await vapidAuth(endpoint), "TTL": String(ttl), "Urgency": "normal",
+    "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream" }, body });
+  if (r.status >= 200 && r.status < 300) { await r.body?.cancel(); return; }
+  throw new PushError(r.status, (await r.text().catch(() => "")).slice(0, 160));
+}
+async function vapid() { try { return !!(await vapidKey()); } catch (e) { console.error("vapid key", String(e)); return false; } }
 const db = createClient(URL_, SERVICE, { auth: { persistSession: false } });
 
 const ORIGIN = "https://daftarapp.co";
@@ -31,13 +86,6 @@ const cors = (req: Request) => {
   return { "Access-Control-Allow-Origin": ok ? o : ORIGIN, "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods": "POST, OPTIONS", "Vary": "Origin" };
 };
 const json = (req: Request, body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors(req), "Content-Type": "application/json" } });
-let dbSecret = "";
-async function cronOk(req: Request) {
-  const got = req.headers.get("x-cron-secret") || "";
-  if (CRON && safeEq(got, CRON)) return true;
-  if (!dbSecret) { const { data } = await db.from("app_cfg").select("v").eq("k", "cron_secret").maybeSingle(); dbSecret = (data && (data as { v: string }).v) || ""; }
-  return !!dbSecret && safeEq(got, dbSecret);
-}
 const safeEq = (a: string, b: string) => { if (!a || a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; };
 
 type Sub = { id: number; user_id: string; company_id: string | null; endpoint: string; p256dh: string; auth: string; lang: string; morning: boolean; evening: boolean; news: boolean; fails: number };
@@ -45,16 +93,18 @@ type Msg = { title: string; body: string; url?: string; tag?: string };
 
 async function send(subs: Sub[], msg: (s: Sub) => Msg | null) {
   let sent = 0, failed = 0;
-  const dead: number[] = [], ok: number[] = [], soft: Sub[] = [];
+  const dead: number[] = [], ok: number[] = [], soft: Sub[] = []; const why = new Map<string, number>();
   const jobs = subs.map(async (s) => {
     const m = msg(s); if (!m) return;
     try {
-      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        JSON.stringify({ title: m.title.slice(0, 120), body: m.body.slice(0, 900), url: m.url || "/app/", tag: m.tag || "daftar", lang: s.lang }),
-        { TTL: 60 * 60 * 12, urgency: "normal" });
+      await pushOne(s.endpoint, s.p256dh, s.auth,
+        JSON.stringify({ title: m.title.slice(0, 120), body: m.body.slice(0, 900), url: m.url || "/app/", tag: m.tag || "daftar", lang: s.lang }), 60 * 60 * 12);
       sent++; ok.push(s.id);
     } catch (e) {
       failed++; const code = (e as { statusCode?: number }).statusCode || 0;
+      const host = (() => { try { return new URL(s.endpoint).host; } catch { return "?"; } })();
+      const reason = `${host} ${code || ""} ${code ? (e as PushError).body : String(e)}`.trim().slice(0, 200); why.set(reason, (why.get(reason) || 0) + 1);
+      console.error("push failed", reason);
       if (code === 404 || code === 410) dead.push(s.id); else soft.push(s);
     }
   });
@@ -62,7 +112,7 @@ async function send(subs: Sub[], msg: (s: Sub) => Msg | null) {
   if (dead.length) await db.from("push_subs").delete().in("id", dead);
   if (ok.length) await db.from("push_subs").update({ last_ok: new Date().toISOString(), fails: 0 }).in("id", ok);
   for (const s of soft) { if (s.fails + 1 >= 5) await db.from("push_subs").delete().eq("id", s.id); else await db.from("push_subs").update({ fails: s.fails + 1 }).eq("id", s.id); }
-  return { sent, failed, removed: dead.length };
+  return { sent, failed, removed: dead.length, errors: [...why].map(([r, n]) => n > 1 ? `${r} (×${n})` : r).slice(0, 5) };
 }
 
 // ---------- the daily digest ----------
@@ -107,12 +157,37 @@ function invTotal(x: Record<string, unknown>) {
   return r2(net * k + tax * k);
 }
 
+// a kind of spending running well above its usual level this month (same idea as the app's home card)
+function spike(exp: Record<string, unknown>[], today: string) {
+  const ym = today.slice(0, 7), day = Number(today.slice(8, 10));
+  if (day < 7) return null;
+  const mStart = (k: number) => { const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 - k, 1)); return d.toISOString().slice(0, 7); };
+  const prev = [mStart(1), mStart(2), mStart(3)];
+  const now: Record<string, number> = {}, base: Record<string, number> = {}, cnt: Record<string, number> = {};
+  let monthAll = 0;
+  for (const x of exp) {
+    const d = String(x.date || ""), c = String(x.category || ""), a = num(x.amount); if (!c) continue;
+    if (d.slice(0, 7) === ym && d <= today) { now[c] = (now[c] || 0) + a; cnt[c] = (cnt[c] || 0) + 1; }
+    else if (prev.includes(d.slice(0, 7))) { base[c] = (base[c] || 0) + a / 3; monthAll += a / 3; }
+  }
+  const dim = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)).getUTCDate(), part = day / dim;
+  let best: { cat: string; pct: number } | null = null;
+  for (const c of Object.keys(now)) {
+    const usual = (base[c] || 0) * part; if (usual <= 0 || (cnt[c] || 0) < 2) continue;
+    const pct = Math.round((now[c] / usual - 1) * 100);
+    if (pct >= 40 && now[c] - usual >= monthAll * part * 0.05 && (!best || pct > best.pct)) best = { cat: c, pct: Math.min(pct, 500) };
+  }
+  return best;
+}
+
 function digest(slot: "morning" | "evening", co: { name: string; settings: Record<string, unknown> }, R: Rec[], lang: string, today: string): Msg | null {
   const en = lang === "en", c = CUR[String(co.settings?.currency || "JOD")] || CUR.JOD, cur = en ? c[1] : c[0];
   const m = (n: number) => `${fmt(n)} ${cur}`;
   const by = (col: string) => R.filter((r) => r.col === col).map((r) => ({ id: r.id, ...r.data }) as Record<string, unknown> & { id: string });
   const staff = by("staff").filter((s) => s.active !== false), att = by("attendance"), inc = by("income"), exp = by("expenses");
   const vou = by("vouchers").filter((v) => !v.void), pay = by("payments"), chq = by("cheques"), inv = by("invoices").filter((x) => !x.void && x.type !== "quote");
+  const pn = (id: unknown) => String((by("parties").find((p) => p.id === id) || {}).name || "").slice(0, 24);
+  const who = (qs: Record<string, unknown>[]) => { const n = qs.slice(0, 3).map((q) => `${pn(q.partyId) || (en ? "cheque" : "شيك")} ${fmt(num(q.amount))}`); return n.length ? ` (${n.join(en ? ", " : "، ")}${qs.length > 3 ? "…" : ""})` : ""; };
   const lines: string[] = [];
   if (slot === "evening") {
     // attendance
@@ -138,15 +213,27 @@ function digest(slot: "morning" | "evening", co: { name: string; settings: Recor
     // tomorrow's cheques
     const tm = addDays(today, 1), open = chq.filter((q) => q.dueDate === tm && ["pending", "deposited", "handed"].includes(String(q.status)));
     const tIn = open.filter((q) => q.dir === "in").reduce((s, q) => s + num(q.amount), 0), tOut = open.filter((q) => q.dir === "out").reduce((s, q) => s + num(q.amount), 0);
-    if (tIn || tOut) lines.push((en ? "Cheques tomorrow: " : "شيكات بكرة: ") + [tIn ? (en ? `in ${m(tIn)}` : `إلك ${m(tIn)}`) : "", tOut ? (en ? `out ${m(tOut)}` : `عليك ${m(tOut)}`) : ""].filter(Boolean).join(" · "));
+    if (tIn || tOut) lines.push((en ? "Cheques tomorrow: " : "شيكات بكرة: ") + [tIn ? (en ? `in ${m(tIn)}` : `إلك ${m(tIn)}`) : "", tOut ? (en ? `out ${m(tOut)}` : `عليك ${m(tOut)}`) : ""].filter(Boolean).join(" · ") + who(open));
+    // Thursday: the week in one look, and Daftar reads it out when they tap
+    if (new Date(today + "T12:00:00Z").getUTCDay() === 4) {
+      const from = addDays(today, -6), wk = (d: unknown) => String(d || "") >= from && String(d || "") <= today;
+      const wIn = inc.filter((x) => wk(x.date)).reduce((s, x) => s + num(x.amount), 0) + vou.filter((v) => wk(v.date) && v.type === "receipt").reduce((s, v) => s + num(v.amount), 0);
+      const wOut = exp.filter((x) => wk(x.date)).reduce((s, x) => s + num(x.amount), 0) + vou.filter((v) => wk(v.date) && v.type === "payment").reduce((s, v) => s + num(v.amount), 0) + pay.filter((p) => wk(p.date)).reduce((s, p) => s + num(p.amount), 0);
+      const sp = spike(exp, today);
+      if (wIn || wOut) {
+        const wl = [en ? `This week: in ${m(wIn)} · out ${m(wOut)}` : `هالأسبوع: دخل ${m(wIn)} · طلع ${m(wOut)}`];
+        if (sp) wl.push(en ? `Heads up: ${sp.cat} is ${sp.pct}% above usual this month` : `انتبه: ${sp.cat} هالشهر أعلى من العادي بـ ${sp.pct}%`);
+        return { title: en ? `Your week · ${co.name}` : `أسبوعك · ${co.name}`, body: [...wl, ...lines].slice(0, 5).join("\n") + (en ? "\nTap to hear it" : "\nاكبس وأنا بحكيلك ياه"), url: "/app/?week=1", tag: "digest-week" };
+      }
+    }
     if (!lines.length) return nudge(en, today);
     return { title: en ? `Today at ${co.name}` : `ملخص اليوم · ${co.name}`, body: lines.join("\n"), url: "/app/", tag: "digest-evening" };
   }
   // morning: what is due today
   const open = chq.filter((q) => ["pending", "deposited", "handed"].includes(String(q.status)) && String(q.dueDate || "") <= today);
   const cIn = open.filter((q) => q.dir === "in"), cOut = open.filter((q) => q.dir === "out");
-  if (cIn.length) lines.push(en ? `Cheques to collect: ${cIn.length} · ${m(cIn.reduce((s, q) => s + num(q.amount), 0))}` : `شيكات إلك مستحقة: ${cIn.length} بقيمة ${m(cIn.reduce((s, q) => s + num(q.amount), 0))}`);
-  if (cOut.length) lines.push(en ? `Cheques you owe today: ${cOut.length} · ${m(cOut.reduce((s, q) => s + num(q.amount), 0))}` : `شيكات عليك مستحقة: ${cOut.length} بقيمة ${m(cOut.reduce((s, q) => s + num(q.amount), 0))} — تأكد إنه رصيد البنك بيكفي`);
+  if (cIn.length) lines.push(en ? `Cheques to collect: ${cIn.length} · ${m(cIn.reduce((s, q) => s + num(q.amount), 0))}${who(cIn)}` : `شيكات إلك مستحقة: ${cIn.length} بقيمة ${m(cIn.reduce((s, q) => s + num(q.amount), 0))}${who(cIn)}`);
+  if (cOut.length) lines.push(en ? `Cheques you owe today: ${cOut.length} · ${m(cOut.reduce((s, q) => s + num(q.amount), 0))}${who(cOut)}` : `شيكات عليك مستحقة: ${cOut.length} بقيمة ${m(cOut.reduce((s, q) => s + num(q.amount), 0))}${who(cOut)} — تأكد إنه رصيد البنك بيكفي`);
   const paid: Record<string, number> = {}; vou.forEach((v) => { if (v.invoiceId) paid[String(v.invoiceId)] = (paid[String(v.invoiceId)] || 0) + num(v.amount); });
   const dueSales = inv.filter((x) => x.type === "sale" && x.dueDate === today && invTotal(x) - (paid[x.id] || 0) > 0.005);
   const dueBills = inv.filter((x) => x.type === "purchase" && x.dueDate === today && invTotal(x) - (paid[x.id] || 0) > 0.005);
@@ -159,7 +246,7 @@ function digest(slot: "morning" | "evening", co: { name: string; settings: Recor
 
 async function runDigest(slot: "morning" | "evening") {
   const today = ammanToday();
-  const { data: subs } = await db.from("push_subs").select("*").not("company_id", "is", null).eq(slot, true);
+  const { data: subs } = await db.from("push_subs").select("*").not("company_id", "is", null).eq("admin", false).eq(slot, true);
   const all = (subs || []) as Sub[]; if (!all.length) return { companies: 0, sent: 0 };
   // only people who may see the money: owner, member, manager, accountant
   const { data: mem } = await db.from("members").select("user_id,company_id,role").in("user_id", [...new Set(all.map((s) => s.user_id))]);
@@ -171,12 +258,60 @@ async function runDigest(slot: "morning" | "evening") {
     try {
       const { data: co } = await db.from("companies").select("name,settings").eq("id", cid).single();
       if (!co) continue;
-      const R = await companyRecords(cid, ["staff", "attendance", "income", "expenses", "vouchers", "payments", "cheques", "invoices"]);
+      const R = await companyRecords(cid, ["staff", "attendance", "income", "expenses", "vouchers", "payments", "cheques", "invoices", "parties"]);
       const res = await send(list, (s) => digest(slot, co as { name: string; settings: Record<string, unknown> }, R, s.lang, today));
       sent += res.sent; failed += res.failed;
     } catch (e) { console.error("digest", cid, String(e)); }
   }
   return { companies: byCo.size, sent, failed };
+}
+
+// ---------- support alerts, replies and scheduled news ----------
+const clip = (x: string, n: number) => { const t = String(x || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+let lastPing = 0;
+async function runPing() {
+  if (Date.now() - lastPing < 1500) return { skipped: true };   // a burst of pings from one instance does the work once
+  lastPing = Date.now();
+  const { data, error } = await db.rpc("_push_claim");
+  if (error) { console.error("claim", error.message); return { error: "claim" }; }
+  const job = data as { admin: { id: string; who: string; text: string; first: boolean; kind?: string }[]; user: { id: string; user_id: string; text: string }[]; broadcast: { id: number; title: string; body: string; url: string; target: string }[] };
+  const out = { admin: 0, user: 0, broadcast: 0 };
+  // 1) new message to support → the admin's phone(s)
+  if (job.admin.length) {
+    const { data: subs } = await db.from("push_subs").select("*").eq("admin", true);
+    if (subs && subs.length) {
+      const one = job.admin.length === 1 ? job.admin[0] : null;
+      const signups = job.admin.filter((x) => x.kind === "signup"), tickets = job.admin.filter((x) => x.kind !== "signup");
+      const msg: Msg = one && one.kind === "signup"
+        ? { title: "شركة جديدة سجّلت ✨ · " + clip(one.who, 40), body: "وصلتهم رسالة ترحيب تلقائية. إذا بدك، ابعتلهم كلمة منك.", url: "/hq-g4ur9cslff/#t=" + one.id, tag: "signup-" + one.id }
+        : one
+        ? { title: (one.first ? "رسالة دعم جديدة · " : "رد من زبون · ") + clip(one.who, 40), body: clip(one.text, 180) || "…", url: "/hq-g4ur9cslff/#t=" + one.id, tag: "ticket-" + one.id }
+        : { title: [tickets.length ? `${tickets.length} رسائل دعم` : "", signups.length ? `${signups.length} شركات جديدة` : ""].filter(Boolean).join(" · "),
+            body: job.admin.slice(0, 3).map((x) => clip(x.who, 25) + ": " + (x.kind === "signup" ? "سجّلت جديد ✨" : clip(x.text, 50))).join("\n"), url: "/hq-g4ur9cslff/", tag: "tickets" };
+      out.admin = (await send(subs as Sub[], () => msg)).sent;
+    }
+  }
+  // 2) the team replied → that customer's phone(s)
+  for (const u of job.user) {
+    const { data: subs } = await db.from("push_subs").select("*").eq("user_id", u.user_id).eq("admin", false);
+    if (!subs || !subs.length) continue;
+    out.user += (await send(subs as Sub[], (s) => s.lang === "en"
+      ? { title: "Daftar team replied", body: clip(u.text, 180), url: "/app/?support=1", tag: "reply-" + u.id }
+      : { title: "رد فريق دفتر على رسالتك", body: clip(u.text, 180), url: "/app/?support=1", tag: "reply-" + u.id })).sent;
+  }
+  // 3) scheduled news from the admin console
+  for (const x of job.broadcast) {
+    let { data: subs } = await db.from("push_subs").select("*").eq("news", true).eq("admin", false);
+    subs = subs || [];
+    if (x.target === "owners") {
+      const { data: own } = await db.from("members").select("user_id").eq("role", "owner");
+      const ids = new Set((own || []).map((m: { user_id: string }) => m.user_id)); subs = subs.filter((s: Sub) => ids.has(s.user_id));
+    }
+    const res = await send(subs as Sub[], () => ({ title: x.title, body: x.body, url: x.url || "/app/", tag: "news-" + x.id }));
+    await db.from("push_log").insert({ by_user: null, title: x.title, body: x.body, url: x.url, target: x.target + " · مجدول", sent: res.sent, failed: res.failed });
+    out.broadcast += res.sent;
+  }
+  return out;
 }
 
 async function caller(req: Request) {
@@ -192,37 +327,54 @@ Deno.serve(async (req) => {
   let b: Record<string, unknown> = {};
   try { const t = await req.text(); if (t.length > 4000) return json(req, { error: "too big" }, 413); b = JSON.parse(t || "{}"); } catch { return json(req, { error: "bad json" }, 400); }
   const mode = String(b.mode || "");
-  if (!vapid()) return json(req, { error: "not configured" }, 503);
+  // health: is everything set up? (no secrets in the answer)
+  if (mode === "health") {
+    const { count, error: e1 } = await db.from("push_subs").select("id", { count: "exact", head: true }).eq("admin", false);
+    const { count: adm, error: e2 } = await db.from("push_subs").select("id", { count: "exact", head: true }).eq("admin", true);
+    const { error: e3 } = await db.from("app_secrets").select("name").limit(1);
+    // which key the server runs with (its role only, never the key itself)
+    let keyRole = "?"; try { keyRole = SERVICE.startsWith("eyJ") ? JSON.parse(atob(SERVICE.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).role : SERVICE.split("_").slice(0, 2).join("_"); } catch { keyRole = "unreadable"; }
+    const errs = [e1, e2, e3].filter(Boolean).map((e) => String((e as { message?: string }).message || e).slice(0, 120));
+    return json(req, { ok: true, vapid: await vapid(), devices: count || 0, admin_devices: adm || 0, key: keyRole, db_errors: errs, version: 19 });
+  }
+  if (!(await vapid())) return json(req, { error: "not configured" }, 503);
 
-  if (mode === "digest" || mode === "welcome" || mode === "ticket") {
-    if (!(await cronOk(req))) return json(req, { error: "forbidden" }, 403);
-    if (mode === "digest") return json(req, await runDigest(b.slot === "morning" ? "morning" : "evening"));
-    if (mode === "welcome") {
-      const uid = String(b.user || ""); if (!/^[0-9a-f-]{36}$/.test(uid)) return json(req, { error: "bad" }, 400);
-      const { data: subs } = await db.from("push_subs").select("*").eq("user_id", uid);
-      return json(req, await send((subs || []) as Sub[], (s) => s.lang === "en"
-        ? { title: "Welcome to Daftar", body: "This is where your daily summary and cheque and invoice reminders will arrive. Try it now: tap the mic and tell Daftar your first expense.", url: "/app/?voice=1", tag: "welcome" }
-        : { title: "أهلاً فيك بدفتر", body: "من هون رح يوصلك ملخص يومك وتنبيهات الشيكات والفواتير. جرّب هلأ: اكبس المايك واحكي لدفتر أول مصروف.", url: "/app/?voice=1", tag: "welcome" }));
-    }
-    const tid = String(b.id || ""); if (!/^[0-9a-f-]{36}$/.test(tid)) return json(req, { error: "bad" }, 400);
-    const { data: tk } = await db.from("support_tickets").select("user_id,messages").eq("id", tid).maybeSingle();
-    if (!tk || !tk.user_id) return json(req, { sent: 0 });
-    const ms = (tk.messages || []) as { role: string; text: string }[], last = ms[ms.length - 1];
-    if (!last || last.role !== "support") return json(req, { sent: 0 });
-    const snip = String(last.text || "").replace(/\s+/g, " ").trim(), short = snip.length > 140 ? snip.slice(0, 137) + "…" : snip;
-    const { data: subs } = await db.from("push_subs").select("*").eq("user_id", tk.user_id);
-    return json(req, await send((subs || []) as Sub[], (s) => ({ title: s.lang === "en" ? "The Daftar team replied" : "فريق دفتر ردّ عليك", body: short, url: "/app/?support=1", tag: "support" })));
+  // ping: send whatever is waiting (support alerts, replies, scheduled news). Safe for anyone to call:
+  // it only sends what the database already queued, and each item goes out once.
+  if (mode === "ping") return json(req, await runPing());
+
+  if (mode === "welcome") {
+    if (!(await cronOk(req.headers.get("x-cron-secret") || ""))) return json(req, { error: "forbidden" }, 403);
+    const uid = String(b.user || ""); if (!/^[0-9a-f-]{36}$/.test(uid)) return json(req, { error: "bad" }, 400);
+    const { data: subs } = await db.from("push_subs").select("*").eq("user_id", uid).eq("admin", false);
+    return json(req, await send((subs || []) as Sub[], (s) => s.lang === "en"
+      ? { title: "Welcome to Daftar", body: "This is where your daily summary and cheque and invoice reminders will arrive. Try it now: tap the mic and tell Daftar your first expense.", url: "/app/?voice=1", tag: "welcome" }
+      : { title: "أهلاً فيك بدفتر", body: "من هون رح يوصلك ملخص يومك وتنبيهات الشيكات والفواتير. جرّب هلأ: اكبس المايك واحكي لدفتر أول مصروف.", url: "/app/?voice=1", tag: "welcome" }));
+  }
+
+  if (mode === "digest") {
+    if (!(await cronOk(req.headers.get("x-cron-secret") || ""))) return json(req, { error: "forbidden" }, 403);
+    const slot = b.slot === "morning" ? "morning" : "evening";
+    return json(req, await runDigest(slot));
   }
 
   const who = await caller(req); if (!who) return json(req, { error: "sign in" }, 401);
 
   if (mode === "test") {
-    const { data: subs } = await db.from("push_subs").select("*").eq("user_id", who.user.id);
+    const { data: subs } = await db.from("push_subs").select("*").eq("user_id", who.user.id).eq("admin", false);
     if (!subs || !subs.length) return json(req, { error: "no device" }, 404);
     const res = await send(subs as Sub[], (s) => s.lang === "en"
       ? { title: "Daftar", body: "Notifications are on. You'll get today's summary every evening.", tag: "test" }
       : { title: "دفتر", body: "الإشعارات شغالة. رح يوصلك ملخص يومك كل مسا.", tag: "test" });
     return json(req, res);
+  }
+
+  if (mode === "admin_test") {   // the admin console's "test": goes through Apple/Google like a real alert
+    const { data: w } = await who.c.rpc("admin_whoami");
+    if (!w || !w.listed || !w.mfa) return json(req, { error: "forbidden" }, 403);
+    const { data: subs } = await db.from("push_subs").select("*").eq("admin", true);
+    if (!subs || !subs.length) return json(req, { error: "no device", sent: 0, failed: 0, errors: [] }, 404);
+    return json(req, await send(subs as Sub[], () => ({ title: "دفتر · تجربة من السيرفر", body: "إذا وصلك هاد، تنبيهات الدعم شغّالة على هالجهاز ✓", url: "/hq-g4ur9cslff/", tag: "admin-test" })));
   }
 
   if (mode === "broadcast") {
@@ -233,9 +385,9 @@ Deno.serve(async (req) => {
     const target = b.target === "owners" ? "owners" : "all";
     if (title.length < 2 || body.length < 2) return json(req, { error: "empty" }, 400);
     const since = new Date(Date.now() - 864e5).toISOString();
-    const { count } = await db.from("push_log").select("id", { count: "exact", head: true }).gte("at", since);
+    const { count } = await db.from("push_log").select("id", { count: "exact", head: true }).gte("at", since).not("by_user", "is", null);
     if ((count || 0) >= 5) return json(req, { error: "limit" }, 429);
-    let { data: subs } = await db.from("push_subs").select("*").eq("news", true);
+    let { data: subs } = await db.from("push_subs").select("*").eq("news", true).eq("admin", false);
     subs = subs || [];
     if (target === "owners") {
       const { data: own } = await db.from("members").select("user_id").eq("role", "owner");

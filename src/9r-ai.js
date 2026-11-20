@@ -16,6 +16,13 @@ Object.assign(L, {
   phDemo:["بالنسخة التجريبية الصور ما بتنقرأ. اعمل حساب ببلاش وجرّبها.","Photos aren't read in the demo. Create a free account to try it."],
   phNoUnit:["أول إشي اعمل {unit}، وبعدها صوّر.","Create a {unit} first, then snap."],
   phOnCheque:["على الشيك: {x}","On the cheque: {x}"], phCheck:["تأكد من الأرقام قبل ما تحفظ.","Check the numbers before saving."],
+  phFl_amount_mismatch:["الرقم والكتابة على الشيك مش متطابقين، فحطّيت المبلغ المكتوب بالحروف. تأكد منه.","The figures and the words on the cheque don't match, so I used the amount in words. Check it."],
+  phFl_amount_words_unread:["ما قدرت أقرأ المبلغ بالحروف، تأكد من الرقم.","Couldn't read the amount in words; check the figure."],
+  phFl_amount_missing:["ما قدرت أقرأ المبلغ، اكتبه بإيدك.","Couldn't read the amount; type it in."],
+  phFl_date_missing:["ما قدرت أقرأ تاريخ الاستحقاق، تأكد منه.","Couldn't read the due date; check it."],
+  phFl_number_missing:["ما قدرت أقرأ رقم الشيك.","Couldn't read the cheque number."],
+  phFl_other_currency:["العملة {c} وعملة شركتك {m}. المبلغ انحط متل ما هو مكتوب، حوّله إذا لازم.","This is in {c} and your company uses {m}. The amount is as written; convert it if needed."],
+  phBank:["البنك","Bank"], phCur:["العملة","Currency"], phWords:["بالحروف","In words"],
   phTile:["صوّر","Snap"], phTileSub:["فاتورة أو شيك","Bill or cheque"],
   vxRec:["قبض","Received"], vxPayP:["دفع","Paid"], vxSale:["فاتورة بيع","Sale"], vxNewParty:["جديد","new"], vxNoParty:["مين؟","Who?"],
   vxChq:["شيك","cheque"], vxSummary:["ملخص","Summary"], vxOwedMe:["إلك عند الناس","Owed to you"], vxIOwe:["عليك للموردين","You owe"],
@@ -27,6 +34,7 @@ Object.assign(L, {
 { const _ctx = vxContext; vxContext = function(){ const c = _ctx.apply(this, arguments);
     c.parties = (S.parties||[]).filter(p=>!p.archived && !p.walkIn).slice(0,150).map(p=>({id:p.id, name:p.name}));
     c.company = (COMPANY && COMPANY.name) || "";
+    try{ c.cur_code = ST().currency || ""; }catch(e){}
     return c; }; }
 function vxParty(a, side){
   const ps = (S.parties||[]).filter(p=>!p.archived && !p.walkIn), want = vxNorm(a.party);
@@ -112,6 +120,13 @@ async function phGo(file){
   closeSheet();
   await phOpen(j || {}, blob);
 }
+function phNote(j, extra){
+  const fl = (j.flags||[]).map(f=>t("phFl_"+f,{c:esc(j.currency||""), m:esc((typeof ST==="function" && ST().currency)||"")})).filter(x=>x && !/^phFl_/.test(x));
+  const c = j.cheque, meta = c ? [c.bank?`${t("phBank")}: ${esc(c.bank)}`:"", j.currency?`${t("phCur")}: ${esc(j.currency)}`:"", c.amount_words?`${t("phWords")}: «${esc(c.amount_words)}»`:""].filter(Boolean).join(" · ")
+    : (j.currency ? `${t("phCur")}: ${esc(j.currency)}` : "");
+  const warn = fl.length ? `<span class="ph-warn">${fl.map(esc).join("<br>")}</span>` : `<span class="sub">${t("phCheck")}</span>`;
+  return `<div class="alert ${fl.length?"warn":"info"} ph-note">${icon(fl.length?"alert":"camera")}<span><b>${esc(j.reply||"")}</b>${extra||""}${meta?`<br><span class="sub">${meta}</span>`:""}<br>${warn}</span></div>`;
+}
 function phAttach(blob){
   try{ FILES.add.push({blob, type:"image/jpeg", name:"photo-"+today()+".jpg", size:blob.size, url:URL.createObjectURL(blob)}); FILES.refresh(); }catch(e){}
 }
@@ -127,7 +142,7 @@ async function phOpen(j, blob){
       const set = (n, v) => { const el = document.getElementById("f_"+n); if(el && v) el.value = v; };
       set("chNo", c.number); set("chDue", c.due_date); set("chBank", c.bank);
       const top = document.getElementById("sheetBody");
-      if(top) top.insertAdjacentHTML("afterbegin", `<div class="alert info ph-note">${icon("camera")}<span>${esc(j.reply||"")}${who && !p ? " · "+esc(t("phOnCheque",{x:who})) : ""}<br><span class="sub">${t("phCheck")}</span></span></div>`);
+      if(top) top.insertAdjacentHTML("afterbegin", phNote(j, who && !p ? " · "+esc(t("phOnCheque",{x:who})) : ""));
     }, 60);
     return;
   }
@@ -142,7 +157,7 @@ async function phOpen(j, blob){
       phAttach(blob);
       const inv = document.getElementById("f_invNo"); if(inv && j.invoice_no) inv.value = j.invoice_no;
       const top = document.getElementById("sheetBody");
-      if(top) top.insertAdjacentHTML("afterbegin", `<div class="alert info ph-note">${icon("camera")}<span>${esc(j.reply||"")}<br><span class="sub">${t("phCheck")}</span></span></div>`);
+      if(top) top.insertAdjacentHTML("afterbegin", phNote(j));
     }, 60);
     return;
   }

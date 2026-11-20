@@ -16,15 +16,19 @@ Object.assign(L, {
   nwVoice2T:["الصوت بيفهم زباينك","Voice knows your customers"], nwVoice2:["«قبضت من أبو أحمد مية»، «شو صار اليوم؟» وأكثر.","\"Got 100 from Abu Ahmad\", \"How was today?\" and more."],
   nwBellT:["إشعارات بوقتها","Timely notifications"], nwBell:["ملخص كل يوم، وتنبيه لما الدعم يرد عليك.","A daily summary, and a heads-up when support replies."],
   nwTry:["جرّب «صوّر» هلأ","Try «Snap» now"], nwOk:["تمام","Got it"],
+  nwBatchT:["صوّر كذا ورقة، وكشف البنك","Many papers, and bank statements"], nwBatch:["صوّر لحد 10 وصولات مرة وحدة، أو صورة كشف البنك، وبتسجّلهم كلهم بكبسة.","Snap up to 10 receipts at once, or your bank statement, and save them all in one tap."],
+  nwRemindT:["ذكّر الزبون بلطف","Polite reminders"], nwRemind:["زبون عليه مصاري؟ رسالة واتساب مهذبة جاهزة بكبسة، وكمان لما يرجع شيك.","A customer owes you? A polite WhatsApp message in one tap, also when a cheque bounces."],
+  nwCashT:["سكّر الصندوق","Close the till"], nwCash:["عدّ الكاش آخر اليوم، ودفتر بيقلك إذا في نقص أو زيادة.","Count the cash at the end of the day; Daftar tells you if it's short or over."],
+  nwWeekT:["أسبوعك بالصوت","Your week, read out"], nwWeek:["كل خميس دفتر بيحكيلك أسبوعك، وبينبهك إذا صرفت أكثر من العادي. واسأله: «كم دفعت لأبو خالد؟»","Every Thursday Daftar reads you your week and flags unusual spending. Ask it: \"How much did I pay Abu Khaled?\""],
 });
-const NW_VER = "24";
+const NW_VER = "27";
 function nwSeen(){ try{ return localStorage.getItem("dnew")===NW_VER; }catch(e){ return true; } }
 function nwMark(){ try{ localStorage.setItem("dnew", NW_VER); }catch(e){} }
 function nwShow(){
   const live = Date.now() < Date.parse("2026-12-01T00:00:00+03:00");
   const it = (ic, k) => `<div class="nw-i"><span class="nw-ic">${icon(ic)}</span><div><b>${t(k+"T")}</b><span>${t(k)}</span></div></div>`;
   openSheet({ title:t("nwTitle"), noSave:true, html:`<div class="nw">
-    ${it("camera","nwSnap")}${it("mic","nwVoice2")}${it("home","nwLook")}${it("bell","nwBell")}${live?it("trophy","nwInv"):""}
+    ${it("grid","nwBatch")}${it("send","nwRemind")}${it("wallet","nwCash")}${it("mic","nwWeek")}${live?it("trophy","nwInv"):""}
     <div class="nw-act"><button type="button" class="btn primary" data-act="nwTry">${icon("camera")}${t("nwTry")}</button><button type="button" class="btn" data-act="nwOk">${t("nwOk")}</button></div></div>` });
   nwMark();
 }
